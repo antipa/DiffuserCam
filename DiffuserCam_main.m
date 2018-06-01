@@ -92,14 +92,15 @@ out_file = [out_file,'_',dtstamp];
 %else
     %dtstamp = '[]
 [xhat, f] = ADMM3D_solver(gpuArray(single(psf)),gpuArray(single(b)),solverSettings);
-xhat_out = gather(xhat);
-save([out_file,'.mat'],'xhat_out','b','f','raw_in');   %Save result
-slashes = strfind(config,'/');
-if ~isempty(slashes)
-    config_fname = config(slashes(end)+1:end-2);
-else
-    config_fname = config(1:end-2);
+if save_results
+    xhat_out = gather(xhat);
+    save([out_file,'.mat'],'xhat_out','b','f','raw_in');   %Save result
+    slashes = strfind(config,'/');
+    if ~isempty(slashes)
+        config_fname = config(slashes(end)+1:end-2);
+    else
+        config_fname = config(1:end-2);
+    end
+    copyfile(config,[solverSettings.save_dir,'/',config_fname,'_',dtstamp,'.m'])  %Copy settings into save directory
 end
-copyfile(config,[solverSettings.save_dir,'/',config_fname,'_',dtstamp,'.m'])  %Copy settings into save directory
-
 
