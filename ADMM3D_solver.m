@@ -47,33 +47,34 @@ crop2d = @(x)x(p1+1:end-p1,p2+1:end-p2,:); %2D cropping
 crop3d = @(x)crop2d(x(:,:,1));   %3D cropping. This is D
 vec = @(X)reshape(X,numel(X),1);
 pad3d = @(x)padarray(pad2d(x),[0 0 Nz-1],'post');
-psf = circshift(flip(psf,3),ceil(Nz/2)+2,3)/norm(psf(:));  %Shift impulse stack
+psf = circshift(flip(psf,3),ceil(Nz/2)+1,3)/norm(psf(:));  %Shift impulse stack
+%psf = psf/norm(psf(:));
 Hs = fftn(ifftshift(pad2d(psf)));  %Compute 3D spectrum
 Hs_conj = conj(Hs);
 clear psf
-Hfor = @(x)real(ifftshift(ifftn(Hs.*fftn(ifftshift(x)))));
-Hadj = @(x)real(ifftshift(ifftn(Hs_conj.*fftn(ifftshift(x)))));
+Hfor = @(x)real(fftshift(ifftn(Hs.*fftn(ifftshift(x)))));
+Hadj = @(x)real(fftshift(ifftn(Hs_conj.*fftn(ifftshift(x)))));
 HtH = abs(Hs.*Hs_conj);
 
 
-vk = zeros(Ny*2,Nx*2,Nz);   %Initialize variables. vk is the primal (this is the image you want to find)
-xi = zeros(2*Ny,2*Nx,Nz);  % Dual associated with Mv = nu (boundary condition variables)
-rho = zeros(2*Ny,2*Nx,Nz);  % Dual associated with v = w   (nonnegativity)
+vk = 0*real(Hs);   %Initialize variables. vk is the primal (this is the image you want to find)
+xi = vk;  % Dual associated with Mv = nu (boundary condition variables)
+rho = vk;  % Dual associated with v = w   (nonnegativity)
 Dtb = pad3d(b);
 
 switch lower(solverSettings.regularizer)
     case('tv')
-        PsiTPsi = generate_laplacian(Ny, Nx, Nz);
-        eta_1 = zeros(2*Ny-1,2*Nx,Nz);  %Duals associatd with Psi v = u (TV sparsity)
-        eta_2 = zeros(2*Ny,2*Nx-1,Nz);
-        eta_3 = zeros(2*Ny,2*Nx,Nz-1);
+        PsiTPsi = generate_laplacian(vk);
+        eta_1 = vk(1:end-1,:,:);  %Duals associatd with Psi v = u (TV sparsity)
+        eta_2 = vk(:,1:end-1,:);   %zeros(2*Ny,2*Nx-1,Nz);
+        eta_3 = vk(:,:,1:end-1);   %zeros(2*Ny,2*Nx,Nz-1);
         PsiT = @(P1,P2,P3)cat(1,P1(1,:,:),diff(P1,1,1),-P1(end,:,:)) + ...
             cat(2,P2(:,1,:),diff(P2,1,2),-P2(:,end,:)) + ...
             cat(3,P3(:,:,1),diff(P3,1,3),-P3(:,:,end));
        
         % Sparsifying map
         Psi = @(x)deal(-diff(x,1,1),-diff(x,1,2),-diff(x,1,3));
-        [uk1, uk2, uk3] = Psi(zeros(2*Ny, 2*Nx,Nz));
+        [uk1, uk2, uk3] = Psi(vk);
         Lvk1 = uk1;
         Lvk2 = uk2;
         Lvk3 = uk3;
@@ -109,7 +110,7 @@ end
 
 v_mult = 1./(mu1*HtH + mu2*PsiTPsi + mu3);  %Denominator of v update (in 3D frequency space)
 
-DtD = pad3d(ones(size(b)));   %D'D(b)
+DtD = pad3d((abs(b)+1)./(abs(b)+1));   % Use input image to compute DtD so it picks up datatype of input (for Gpu)
 nu_mult = 1./(DtD + mu1);   %denominator of nu update
 
 n = 0;  %Initialize number of steps to 0
@@ -125,8 +126,8 @@ f.primal_resid_w = f.dual_resid_s;
 f.objective = f.primal_resid_u;   
 f.data_fidelity = f.primal_resid_u;
 f.regularizer_penalty = f.primal_resid_u;
-Hvkp = zeros(2*Ny, 2*Nx,Nz);
-
+Hvkp = vk;
+tic
 while n<solverSettings.maxIter
     n = n+1;
     Hvk = Hvkp;
@@ -150,18 +151,18 @@ while n<solverSettings.maxIter
     end
     
     
-    vkp = real(ifftshift(ifftn(v_mult .* fftn(ifftshift(vkp_numerator)))));
+    vkp = real(fftshift(ifftn(v_mult .* fftn(ifftshift(vkp_numerator)))));
     
     %Update dual and parameter for Hs=v constraint
     Hvkp = Hfor(vkp);
     r_sv = Hvkp-nukp;
     xi = xi + mu1*r_sv;
-    f.dual_resid_s(n) = mu1*norm(vec(Hvk - Hvkp));
-    f.primal_resid_s(n) = norm(vec(r_sv));
+    f.dual_resid_s(n) = gather(mu1*norm(vec(Hvk - Hvkp)));
+    f.primal_resid_s(n) = gather(norm(vec(r_sv)));
     [mu1, mu1_update] = ADMM3D_update_param(mu1,solverSettings.resid_tol,solverSettings.mu_inc,solverSettings.mu_dec,f.primal_resid_s(n),f.dual_resid_s(n));
     
     % Update dual and parameter for Ls=v
-    f.data_fidelity(n) = .5*norm(crop3d(Hvkp)-b,'fro')^2;
+    f.data_fidelity(n) = gather(.5*norm(crop3d(Hvkp)-b,'fro')^2);
     switch lower(solverSettings.regularizer)
         case('tv')
             Lvk1_ = Lvk1;
@@ -174,9 +175,9 @@ while n<solverSettings.maxIter
             eta_1 = eta_1 + mu2*r_su_1;
             eta_2 = eta_2 + mu2*r_su_2;
             eta_3 = eta_3 + mu2*r_su_3;
-            f.dual_resid_u(n) = mu2*sqrt(norm(vec(Lvk1_ - Lvk1))^2 + norm(vec(Lvk2_ - Lvk2))^2 + norm(vec(Lvk3_ - Lvk3))^2);
-            f.primal_resid_u(n) = sqrt(norm(vec(r_su_1))^2 + norm(vec(r_su_2))^2 + norm(vec(r_su_3))^2);
-            f.regularizer_penalty(n) = solverSettings.tau*(sum(vec(abs(Lvk1))) + sum(vec(abs(Lvk2))) + sum(vec(abs(Lvk3))));
+            f.dual_resid_u(n) = gather(mu2*sqrt(norm(vec(Lvk1_ - Lvk1))^2 + norm(vec(Lvk2_ - Lvk2))^2 + norm(vec(Lvk3_ - Lvk3))^2));
+            f.primal_resid_u(n) = gather(sqrt(norm(vec(r_su_1))^2 + norm(vec(r_su_2))^2 + norm(vec(r_su_3))^2));
+            f.regularizer_penalty(n) = gather(solverSettings.tau*(sum(vec(abs(Lvk1))) + sum(vec(abs(Lvk2))) + sum(vec(abs(Lvk3)))));
             
         case('tv_native')
             Lvk1_ = Lvk1;
@@ -216,8 +217,8 @@ while n<solverSettings.maxIter
     % Update nonnegativity dual and parameter (s=w)
     r_sw = vkp-wkp;
     rho = rho + mu3*r_sw;
-    f.dual_resid_w(n) = mu3*norm(vec(vk - vkp));
-    f.primal_resid_w(n) = norm(vec(r_sw));
+    f.dual_resid_w(n) = gather(mu3*norm(vec(vk - vkp)));
+    f.primal_resid_w(n) = gather(norm(vec(r_sw)));
     [mu3, mu3_update] = ADMM3D_update_param(mu3,solverSettings.resid_tol,solverSettings.mu_inc,solverSettings.mu_dec,f.primal_resid_w(n),f.dual_resid_w(n));
     
     %Update filters
@@ -234,15 +235,17 @@ while n<solverSettings.maxIter
     
     
     vk = vkp;
-    
-    if mod(n,solverSettings.disp_figs) == 0
-        draw_figures(vk,solverSettings)
-    end
+   
     
     if mod(n,solverSettings.print_interval) == 0
-         fprintf('iter: %i \t cost: %.2g \t data_fidelity: %.2g \t norm: %.2g \t Primal v: %.2g \t Dual v: %.2g \t Primal u: %.2g \t Dual u: %.2g \t Primal w: %.2g \t Dual w: %.2g \t mu1: %.2g \t mu2: %.2g \t mu3: %.2g \n',...
-            n,f.objective(n),f.data_fidelity(n),f.regularizer_penalty(n),f.primal_resid_s(n), f.dual_resid_s(n),f.primal_resid_u(n), f.dual_resid_u(n),f.primal_resid_w(n), f.dual_resid_w(n),mu1,mu2,mu3)
+        t_iter = toc/solverSettings.print_interval;
+         fprintf('iter: %i \t t: %.2g \t cost: %.2g \t data_fidelity: %.2g \t norm: %.2g \t Primal v: %.2g \t Dual v: %.2g \t Primal u: %.2g \t Dual u: %.2g \t Primal w: %.2g \t Dual w: %.2g \t mu1: %.2g \t mu2: %.2g \t mu3: %.2g \n',...
+            n,t_iter,f.objective(n),f.data_fidelity(n),f.regularizer_penalty(n),f.primal_resid_s(n), f.dual_resid_s(n),f.primal_resid_u(n), f.dual_resid_u(n),f.primal_resid_w(n), f.dual_resid_w(n),mu1,mu2,mu3)
             %disp([n,f.objective(n),f.data_fidelity(n),f.regularizer_penalty(n),f.primal_resid_s(n), f.dual_resid_s(n),f.primal_resid_u(n), f.dual_resid_u(n),f.primal_resid_w(n), f.dual_resid_w(n),mu1,mu2,mu3])
+        tic;
+    end
+    if mod(n,solverSettings.disp_figs) == 0
+        draw_figures(vk,solverSettings)
     end
 end
 end
@@ -265,7 +268,7 @@ elseif numel(size(xk))==3
     imagesc(solverSettings.display_func(im1));
     hold on
     axis image
-    colormap parula
+    colormap gray
     %colorbar
     caxis([0 prctile(im1(:),solverSettings.disp_percentile)])
     set(gca,'fontSize',6)
@@ -278,7 +281,7 @@ elseif numel(size(xk))==3
     imagesc(im2);
     hold on    
     %axis image
-    colormap parula
+    colormap gray
     %colorbar
     set(gca,'fontSize',8)
     caxis([0 prctile(im2(:),solverSettings.disp_percentile)])
@@ -292,7 +295,7 @@ elseif numel(size(xk))==3
     imagesc(solverSettings.disp_func(im3));
     hold on
     %axis image
-    colormap parula
+    colormap gray
     title('YZ')
     colorbar   
     set(gca,'fontSize',8)
@@ -305,8 +308,8 @@ end
 drawnow
 end
 
-function PsiTPsi = generate_laplacian(Ny,Nx,Nz)
-    lapl = zeros(2*Ny,2*Nx,Nz);    %Compute laplacian in closed form. This is the kernal to compute Psi'Psi
+function PsiTPsi = generate_laplacian(lapl)  %Takes in an array and makes laplacian on same grid (fft shifted)
+    %lapl = zeros(2*Ny,2*Nx,Nz);    %Compute laplacian in closed form. This is the kernal to compute Psi'Psi
     lapl(1) = 6;
     lapl(1,2,1) = -1;
     lapl(2,1,1) = -1;
@@ -314,7 +317,7 @@ function PsiTPsi = generate_laplacian(Ny,Nx,Nz)
     lapl(1,end,1) = -1;
     lapl(end,1,1) = -1;
     lapl(1,1,end) = -1;
-    PsiTPsi = abs(fftn(lapl));   %Compute power spectrum of laplacian
+    PsiTPsi = abs(fftn((lapl)));   %Compute power spectrum of laplacian
 end
 
 function [mu_out, mu_update] = ADMM3D_update_param(mu,resid_tol,mu_inc,mu_dec,r,s)

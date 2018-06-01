@@ -56,9 +56,9 @@ end
 
 [Ny, Nx, Nz] = size(psf);
 % Normalize each slice
-%for n = 1:Nz
-%    psf(:,:,n) = psf(:,:,n)/norm(psf(:,:,n),'fro');
-%end
+% for n = 1:Nz
+%      psf(:,:,n) = psf(:,:,n)/norm(psf(:,:,n),'fro');
+% end
 
 % Load image file and adjust to impulse size.
 raw_in = imread(image_file);
@@ -80,18 +80,20 @@ else
 end
 
 b = imresize(imc - image_bias,[Ny, Nx],'box');
-
+b = b/max(b(:));  %Normalize to 16-bit range
 % Solver stuff
 
 
 out_file = [solverSettings.save_dir,'/state_',num2str(solverSettings.maxIter)];
-if exist([out_file,'.mat'],'file')
-    fprintf('file already exists. Adding datetime stamp to avoid overwriting. \n');
-    dtstamp = datestr(datetime('now'),'YYYYMMDD_hhmmss');
-    out_file = [out_file,'_',dtstamp];
-end
-[xhat, f] = ADMM3D_solver(psf,b,solverSettings);
-save([out_file,'.mat'],'xhat','b','f','raw_in');   %Save result
+%if exist([out_file,'.mat'],'file')
+    %fprintf('file already exists. Adding datetime stamp to avoid overwriting. \n');
+dtstamp = datestr(datetime('now'),'YYYYmmDD_hhMMss');
+out_file = [out_file,'_',dtstamp];
+%else
+    %dtstamp = '[]
+[xhat, f] = ADMM3D_solver(gpuArray(single(psf)),gpuArray(single(b)),solverSettings);
+xhat_out = gather(xhat);
+save([out_file,'.mat'],'xhat_out','b','f','raw_in');   %Save result
 slashes = strfind(config,'/');
 if ~isempty(slashes)
     config_fname = config(slashes(end)+1:end-2);
