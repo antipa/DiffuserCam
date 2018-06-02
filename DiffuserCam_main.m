@@ -42,7 +42,7 @@ if end_z == 0 || end_z > Nz_in
     end_z = Nz_in;
 end
 
-psf = psf(:,:,start_z:end_z);  %Overwrite to save memory
+psf = psf(:,:,start_z:end_z) - psf_bias;  %Overwrite to save memory
 
 % Do downsampling
 for n = 1:log2(lateral_downsample)

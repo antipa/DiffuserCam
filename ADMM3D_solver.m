@@ -31,6 +31,10 @@ if ~isfield(solverSettings,'display_func')
     solverSettings.display_func = @(x)x;
 end
 
+if ~isfield(solverSettings,'cmap')
+   solverSettings.cmap = 'gray'; 
+end
+
 
 mu1 = solverSettings.mu1;   %Set initial ADMM parameters
 mu2 = solverSettings.mu2;
@@ -48,7 +52,6 @@ crop3d = @(x)crop2d(x(:,:,1));   %3D cropping. This is D
 vec = @(X)reshape(X,numel(X),1);
 pad3d = @(x)padarray(pad2d(x),[0 0 Nz-1],'post');
 psf = circshift(flip(psf,3),ceil(Nz/2)+1,3)/norm(psf(:));  %Shift impulse stack
-%psf = psf/norm(psf(:));
 Hs = fftn(ifftshift(pad2d(psf)));  %Compute 3D spectrum
 Hs_conj = conj(Hs);
 clear psf
@@ -79,25 +82,30 @@ switch lower(solverSettings.regularizer)
         Lvk2 = uk2;
         Lvk3 = uk3;
     case('tv_native')
-        PsiTPsi = generate_laplacian(Ny, Nx, Nz);
+        PsiTPsi = generate_laplacian(vk);
         PsiT = @(P1,P2,P3,P4)cat(1,P1(1,:,:),diff(P1,1,1),-P1(end,:,:)) + ...
             cat(2,P2(:,1,:),diff(P2,1,2),-P2(:,end,:)) + ...
             cat(3,P3(:,:,1),diff(P3,1,3),-P3(:,:,end)) + ...
-            solverSettings.tau_n*P4;
+            solverSettings.tau_n/solverSettings.tau*P4;
         
         
         %Sparsifying with gradient and l1
-        Psi = @(x)deal(-diff(x,1,1),-diff(x,1,2),-diff(x,1,3),solverSettings.tau_n*x);
-        [uk1, uk2, uk3, uk4] = Psi(zeros(2*Ny, 2*Nx,Nz));
+        Psi = @(x)deal(-diff(x,1,1),-diff(x,1,2),-diff(x,1,3),...
+            solverSettings.tau_n/solverSettings.tau*x);
+        [uk1, uk2, uk3, uk4] = Psi(vk);
         Lvk1 = uk1;
         Lvk2 = uk2;
         Lvk3 = uk3;
         Lvk4 = uk4;
-        eta_1 = zeros(2*Ny-1,2*Nx,Nz);  %Duals associatd with Psi v = u (TV sparsity)
-        eta_2 = zeros(2*Ny,2*Nx-1,Nz);
-        eta_3 = zeros(2*Ny,2*Nx,Nz-1);
-        eta_4 = zeros(2*Ny, 2*Nx, Nz);
-        PsiTPsi = PsiTPsi + solverSettings.tau_n^2;
+        eta_1 = vk(1:end-1,:,:);  %Duals associatd with Psi v = u (TV sparsity)
+        eta_2 = vk(:,1:end-1,:);   %zeros(2*Ny,2*Nx-1,Nz);
+        eta_3 = vk(:,:,1:end-1);   %zeros(2*Ny,2*Nx,Nz-1);
+        eta_4 = vk;
+%         eta_1 = zeros(2*Ny-1,2*Nx,Nz);  %Duals associatd with Psi v = u (TV sparsity)
+%         eta_2 = zeros(2*Ny,2*Nx-1,Nz);
+%         eta_3 = zeros(2*Ny,2*Nx,Nz-1);
+%         eta_4 = zeros(2*Ny, 2*Nx, Nz);
+        PsiTPsi = PsiTPsi + solverSettings.tau_n^2/solverSettings.tau^2;
     case('native')
         
         PsiTPsi = 1;
@@ -193,11 +201,13 @@ while n<solverSettings.maxIter
             eta_2 = eta_2 + mu2*r_su_2;
             eta_3 = eta_3 + mu2*r_su_3;
             eta_4 = eta_4 + mu2*r_su_4;
-            f.dual_resid_u(n) = mu2*sqrt(norm(vec(Lvk1_ - Lvk1))^2 + norm(vec(Lvk2_ - Lvk2))^2 + ...
-                norm(vec(Lvk3_ - Lvk3))^2 + norm(vec(Lvk4_ - Lvk4))^2);
-            f.primal_resid_u(n) = sqrt(norm(vec(r_su_1))^2 + norm(vec(r_su_2))^2 + ...
-                norm(vec(r_su_3))^2 + norm(vec(r_su_4))^2);
-           f.regularizer_penalty(n) = solverSettings.tau*(sum(vec(abs(Lvk1))) + sum(vec(abs(Lvk2))) + sum(vec(abs(Lvk3)))) + solverSettings.tau_n*sum(vec(abs(Lvk4)));
+            f.dual_resid_u(n) = gather(mu2*sqrt(norm(vec(Lvk1_ - Lvk1))^2 + norm(vec(Lvk2_ - Lvk2))^2 + ...
+                norm(vec(Lvk3_ - Lvk3))^2 + norm(vec(Lvk4_ - Lvk4))^2));
+            f.primal_resid_u(n) = gather(sqrt(norm(vec(r_su_1))^2 + norm(vec(r_su_2))^2 + ...
+                norm(vec(r_su_3))^2 + norm(vec(r_su_4))^2));
+           f.regularizer_penalty(n) = gather(solverSettings.tau*(sum(vec(abs(Lvk1))) +...
+               sum(vec(abs(Lvk2))) + sum(vec(abs(Lvk3)))) + ...
+               solverSettings.tau_n*sum(vec(abs(Lvk4))));
         case('native')
             Lvk_ = Lvk;
             Lvk = Psi(vkp);
@@ -261,14 +271,14 @@ if numel(size(xk))==2
     colormap(solverSettings.color_map);
     
 elseif numel(size(xk))==3
-    xk = gather(xk);
+    xk = solverSettings.disp_crop(xk);
     subplot(1,3,1)
     
     im1 = squeeze(max(xk,[],3));
     imagesc(solverSettings.display_func(im1));
     hold on
     axis image
-    colormap gray
+    colormap (solverSettings.cmap)
     %colorbar
     caxis([0 prctile(im1(:),solverSettings.disp_percentile)])
     set(gca,'fontSize',6)
@@ -281,7 +291,7 @@ elseif numel(size(xk))==3
     imagesc(im2);
     hold on    
     %axis image
-    colormap gray
+    colormap (solverSettings.cmap)
     %colorbar
     set(gca,'fontSize',8)
     caxis([0 prctile(im2(:),solverSettings.disp_percentile)])
@@ -295,7 +305,7 @@ elseif numel(size(xk))==3
     imagesc(solverSettings.disp_func(im3));
     hold on
     %axis image
-    colormap gray
+    colormap (solverSettings.cmap)
     title('YZ')
     colorbar   
     set(gca,'fontSize',8)
