@@ -56,8 +56,10 @@ end
 
 [Ny, Nx, Nz] = size(psf);
 % Normalize each slice
+%psfn = zeros(1,Nz);
 % for n = 1:Nz
-%      psf(:,:,n) = psf(:,:,n)/norm(psf(:,:,n),'fro');
+%     psfn(n) = norm(psf(:,:,n),'fro');
+%      psf(:,:,n) = psf(:,:,n)/psfn(n);
 % end
 
 % Load image file and adjust to impulse size.

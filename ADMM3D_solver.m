@@ -101,17 +101,13 @@ switch lower(solverSettings.regularizer)
         eta_2 = vk(:,1:end-1,:);   %zeros(2*Ny,2*Nx-1,Nz);
         eta_3 = vk(:,:,1:end-1);   %zeros(2*Ny,2*Nx,Nz-1);
         eta_4 = vk;
-%         eta_1 = zeros(2*Ny-1,2*Nx,Nz);  %Duals associatd with Psi v = u (TV sparsity)
-%         eta_2 = zeros(2*Ny,2*Nx-1,Nz);
-%         eta_3 = zeros(2*Ny,2*Nx,Nz-1);
-%         eta_4 = zeros(2*Ny, 2*Nx, Nz);
         PsiTPsi = PsiTPsi + solverSettings.tau_n^2/solverSettings.tau^2;
     case('native')
         
         PsiTPsi = 1;
         PsiT = @(x)x;
         Psi = @(x)x;   %Identity operator for native sparsity
-        uk = zeros(2*Ny, 2*Nx, Nz);
+        uk = vk;
         Lvk = uk;
         eta = uk;
 end
@@ -213,9 +209,9 @@ while n<solverSettings.maxIter
             Lvk = Psi(vkp);
             r_su = Lvk - uk;
             eta = eta + mu2*r_su;
-            f.dual_resid_u(n) = mu2*norm(vec(Lvk_ - Lvk));
-            f.primal_resid_u(n) = norm(vec(r_su));
-            f.regularizer_penalty(n) = solverSettings.tau_n*(sum(vec(abs(Lvk))));
+            f.dual_resid_u(n) = gather(mu2*norm(vec(Lvk_ - Lvk)));
+            f.primal_resid_u(n) = gather(norm(vec(r_su)));
+            f.regularizer_penalty(n) = gather(solverSettings.tau_n*(sum(vec(abs(Lvk)))));
     end
     f.objective(n) = f.data_fidelity(n) + f.regularizer_penalty(n);
     
@@ -274,7 +270,7 @@ elseif numel(size(xk))==3
     xk = solverSettings.disp_crop(xk);
     subplot(1,3,1)
     
-    im1 = squeeze(max(xk,[],3));
+    im1 = squeeze(sum(xk,3));
     imagesc(solverSettings.display_func(im1));
     hold on
     axis image
@@ -327,7 +323,7 @@ function PsiTPsi = generate_laplacian(lapl)  %Takes in an array and makes laplac
     lapl(1,end,1) = -1;
     lapl(end,1,1) = -1;
     lapl(1,1,end) = -1;
-    PsiTPsi = abs(fftn((lapl)));   %Compute power spectrum of laplacian
+    PsiTPsi = abs(fftn(lapl));   %Compute power spectrum of laplacian
 end
 
 function [mu_out, mu_update] = ADMM3D_update_param(mu,resid_tol,mu_inc,mu_dec,r,s)
