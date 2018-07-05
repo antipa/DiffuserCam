@@ -1,24 +1,25 @@
 %impulse_mat_file_name = '~/Documents/randn_psf.mat';
 %impulse_mat_file_name = 'Y:\Diffusers''nstuff\miniscope3D\Sims\lenslets_miniscope_zemax_stack.mat';
 
-%impulse_mat_file_name = './example_data/example_psfs.mat';
+impulse_mat_file_name = './example_data/zstack_270_320_44_4github.mat';
 %impulse_mat_file_name = 'Y:\Diffusers''nstuff\3D_Calibration\zstack_270_320_44_4github.mat';
 %impulse_mat_file_name = 'C:\Users\nick\Documents\MATLAB\DiffuserCam-Dev\example_data\example_psfs.mat';
-impulse_mat_file_name = 'Y:\Diffusers''nstuff\3D_Calibration\pco_dense_corrected_mono_2xds.mat';
+%impulse_mat_file_name = 'Y:\Diffusers''nstuff\3D_Calibration\pco_dense_corrected_mono_2xds.mat';
 %impulse_mat_file_name = 'Y:\Diffusers''nstuff\miniscope3D\hstack.mat';
 %impulse_var_name = 'hstack';
-impulse_var_name = 'imstack';
+impulse_var_name = 'psf';
 %image_file = './example_data/example_raw.png';  %This will have image_bias subtracted, and be resized to the downsampled impulse stack size using a 'box' filter
 %image_file = 'Y:\Diffusers''nstuff\3D_Calibration\usaf_tilt_4github.png';
 image_file = 'Y:\Diffusers''nstuff\3d_images_to_process\flowers_near_top_halfds_mono.png';
+image_file = './example_data/usaf_tilt_4github.png';
 %image_file = 'Y:\Diffusers''nstuff\miniscope3D\Sims\zebrafish_lenslets_sparsest.png';
 %image_file = 'Y:\Diffusers''nstuff\miniscope3D\ZebrafishVideoFramesbckSub\80.png';
 %image_file = 'Y:\Diffusers''nstuff\miniscope3D\data\AnimalData\Zebrafish\H14_M13_S32_strong-flash\video_variance.png';
 color_to_process = 'mono';  %'red','green','blue', or 'mono'. If raw file is mono, this is ignored
 image_bias = 100;   %If camera has bias, subtract from measurement file. 
 psf_bias = 102;   %if PSF needs sensor bias removed, put that here.
-lateral_downsample = 4;  %factor to downsample impulse stack laterally. Must be multiple of 2 and >= 1.
-axial_downsample = 4;  % Axial averageing of impulse stack. Must be multiple of 2 and >= 1.
+lateral_downsample = 1;  %factor to downsample impulse stack laterally. Must be multiple of 2 and >= 1.
+axial_downsample = 1;  % Axial averageing of impulse stack. Must be multiple of 2 and >= 1.
  
 % Allow user to use subset of Z. This is computed BEFORE downsampling by a
 % factor of AXIAL_DOWNSAMPLE

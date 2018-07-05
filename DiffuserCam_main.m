@@ -81,19 +81,17 @@ else
     imc = double(raw_in);
 end
 
-b = imresize(imc - image_bias,[Ny, Nx],'box');
-b = b/max(b(:));  %Normalize to 16-bit range
+b = imresize(imc - image_bias,[Ny, Nx],'box'); %Subtract camera bias
+b = b/max(b(:));  %Normalize measurement
+
+
 % Solver stuff
-
-
 out_file = [solverSettings.save_dir,'/state_',num2str(solverSettings.maxIter)];
-%if exist([out_file,'.mat'],'file')
-    %fprintf('file already exists. Adding datetime stamp to avoid overwriting. \n');
+
 dtstamp = datestr(datetime('now'),'YYYYmmDD_hhMMss');
 out_file = [out_file,'_',dtstamp];
-%else
-    %dtstamp = '[]
-[xhat, f] = ADMM3D_solver(gpuArray(single(psf)),gpuArray(single(b)),solverSettings);
+
+[xhat, f] = ADMM3D_solver((single(psf)),(single(b)),solverSettings);
 if save_results
     xhat_out = gather(xhat);
     save([out_file,'.mat'],'xhat_out','b','f','raw_in');   %Save result

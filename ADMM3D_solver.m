@@ -51,7 +51,7 @@ crop2d = @(x)x(p1+1:end-p1,p2+1:end-p2,:); %2D cropping
 crop3d = @(x)crop2d(x(:,:,1));   %3D cropping. This is D
 vec = @(X)reshape(X,numel(X),1);
 pad3d = @(x)padarray(pad2d(x),[0 0 Nz-1],'post');
-psf = circshift(flip(psf,3),ceil(Nz/2)+1,3)/norm(psf(:));  %Shift impulse stack
+psf = circshift(flip(psf,3),ceil(Nz/2)+1,3)/max(psf(:));  %Shift impulse stack and normalize
 Hs = fftn(ifftshift(pad2d(psf)));  %Compute 3D spectrum
 Hs_conj = conj(Hs);
 clear psf
