@@ -13,7 +13,7 @@ run(config); %This should be a string path to a .m script that populates a bunch
 if solverSettings.save_dir(end) == '/'
     solverSettings.save_dir = solverSettings.save_dir(1:end-1);
 end
-    
+solverSettings.save_dir = [solverSettings.save_dir,'/',solverSettings.dtstamp];
 if ~exist(solverSettings.save_dir,'dir')
     mkdir(solverSettings.save_dir);
 end
@@ -54,13 +54,7 @@ for n = 1:log2(axial_downsample)
     psf = 1/2*(psf(:,:,1:2:end)+psf(:,:,2:2:end));
 end
 
-[Ny, Nx, Nz] = size(psf);
-% Normalize each slice
-%psfn = zeros(1,Nz);
-% for n = 1:Nz
-%     psfn(n) = norm(psf(:,:,n),'fro');
-%      psf(:,:,n) = psf(:,:,n)/psfn(n);
-% end
+[Ny, Nx, ~] = size(psf);
 
 % Load image file and adjust to impulse size.
 raw_in = imread(image_file);
@@ -86,13 +80,16 @@ b = b/max(b(:));  %Normalize measurement
 
 
 % Solver stuff
-out_file = [solverSettings.save_dir,'/state_',num2str(solverSettings.maxIter)];
 
-dtstamp = datestr(datetime('now'),'YYYYmmDD_hhMMss');
-out_file = [out_file,'_',dtstamp];
+out_file = save_state(solverSettings,solverSettings.maxIter);
 
-[xhat, f] = ADMM3D_solver((single(psf)),(single(b)),solverSettings);
+if useGpu
+    [xhat, f] = ADMM3D_solver(gpuArray(single(psf)),gpuArray(single(b)),solverSettings);
+else
+    [xhat, f] = ADMM3D_solver(single(psf),single(b),solverSettings);
+end
 if save_results
+    fprintf('saving results. Please wait. \n')
     xhat_out = gather(xhat);
     save([out_file,'.mat'],'xhat_out','b','f','raw_in');   %Save result
     slashes = strfind(config,'/');
@@ -101,6 +98,7 @@ if save_results
     else
         config_fname = config(1:end-2);
     end
-    copyfile(config,[solverSettings.save_dir,'/',config_fname,'_',dtstamp,'.m'])  %Copy settings into save directory
+    copyfile(config,[solverSettings.save_dir,'/',config_fname,'_',solverSettings.dtstamp,'.m']);  %Copy settings into save directory
+    fprintf(['Done. Results saved to ',out_file,'.mat\n'])
 end
 

@@ -51,12 +51,12 @@ crop2d = @(x)x(p1+1:end-p1,p2+1:end-p2,:); %2D cropping
 crop3d = @(x)crop2d(x(:,:,1));   %3D cropping. This is D
 vec = @(X)reshape(X,numel(X),1);
 pad3d = @(x)padarray(pad2d(x),[0 0 Nz-1],'post');
-psf = circshift(flip(psf,3),ceil(Nz/2)+1,3)/max(psf(:));  %Shift impulse stack and normalize
+psf = circshift(flip(psf,3),ceil(Nz/2)+1,3)/norm(psf(:));  %Shift impulse stack and normalize
 Hs = fftn(ifftshift(pad2d(psf)));  %Compute 3D spectrum
 Hs_conj = conj(Hs);
 clear psf
-Hfor = @(x)real(fftshift(ifftn(Hs.*fftn(ifftshift(x)))));
-Hadj = @(x)real(fftshift(ifftn(Hs_conj.*fftn(ifftshift(x)))));
+Hfor = @(x)real((ifftn(Hs.*fftn((x)))));
+Hadj = @(x)real((ifftn(Hs_conj.*fftn((x)))));
 HtH = abs(Hs.*Hs_conj);
 
 
@@ -155,7 +155,7 @@ while n<solverSettings.maxIter
     end
     
     
-    vkp = real(fftshift(ifftn(v_mult .* fftn(ifftshift(vkp_numerator)))));
+    vkp = real((ifftn(v_mult .* fftn((vkp_numerator)))));
     
     %Update dual and parameter for Hs=v constraint
     Hvkp = Hfor(vkp);
