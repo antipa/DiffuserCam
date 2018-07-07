@@ -99,6 +99,6 @@ if save_results
         config_fname = config(1:end-2);
     end
     copyfile(config,[solverSettings.save_dir,'/',config_fname,'_',solverSettings.dtstamp,'.m']);  %Copy settings into save directory
-    fprintf(['Done. Results saved to ',out_file,'.mat\n'])
+    fprintf(['Done. Results saved to ',out_file,'\n'])
 end
 
