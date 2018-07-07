@@ -89,9 +89,9 @@ else
     [xhat, f] = ADMM3D_solver(single(psf),single(b),solverSettings);
 end
 if save_results
-    fprintf('saving results. Please wait. \n')
+    fprintf('saving final results. Please wait. \n')
     xhat_out = gather(xhat);
-    save([out_file,'.mat'],'xhat_out','b','f','raw_in');   %Save result
+    save(out_file,'xhat_out','b','f','raw_in');   %Save result
     slashes = strfind(config,'/');
     if ~isempty(slashes)
         config_fname = config(slashes(end)+1:end-2);

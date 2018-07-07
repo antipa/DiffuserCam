@@ -32,9 +32,18 @@ if ~isfield(solverSettings,'display_func')
 end
 
 if ~isfield(solverSettings,'cmap')
-   solverSettings.cmap = 'gray'; 
+    solverSettings.cmap = 'gray';
 end
 
+if isfield(solverSettings,'save_vars')
+    assert(iscell(solverSettings.save_vars),'solverSettings.save_vars must be a cell array of strings')
+else
+    solverSettings.save_vars = {'vk'};
+end
+
+if strcmpi(solverSettings.save_vars,'')
+    solverSettings.save_vars = {'vk'};
+end
 
 mu1 = solverSettings.mu1;   %Set initial ADMM parameters
 mu2 = solverSettings.mu2;
@@ -155,7 +164,7 @@ while n<solverSettings.maxIter
     end
     
     
-    vkp = real((ifftn(v_mult .* fftn((vkp_numerator)))));
+    vkp = real(ifftn(v_mult .* fftn(vkp_numerator)));
     
     %Update dual and parameter for Hs=v constraint
     Hvkp = Hfor(vkp);
@@ -241,7 +250,13 @@ while n<solverSettings.maxIter
     
     
     vk = vkp;
-   
+    
+    if mod(n,solverSettings.save_every) == 0
+        fprintf('saving state %i...\n',n)
+        out_file = save_state(solverSettings,n);
+        save(out_file,solverSettings.save_vars{:});
+        fprintf('done saving\n')
+    end
     
     if mod(n,solverSettings.print_interval) == 0
         t_iter = toc/solverSettings.print_interval;

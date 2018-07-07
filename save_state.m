@@ -4,4 +4,4 @@ function out_file = save_state(solverSettings,current_iter)
 % solverSettings: settings structure. Must contain field 'save_dir' 
 % current_iter: current iteration number
 out_file = [solverSettings.save_dir,'/state_',num2str(current_iter),'_',...
-    solverSettings.dtstamp];
+    solverSettings.dtstamp,'.mat'];

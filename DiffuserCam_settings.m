@@ -9,8 +9,8 @@ image_file = './example_data/usaf_tilt_4github.png';
 color_to_process = 'mono';  %'red','green','blue', or 'mono'. If raw file is mono, this is ignored
 image_bias = 100;   %If camera has bias, subtract from measurement file. 
 psf_bias = 102;   %if PSF needs sensor bias removed, put that here.
-lateral_downsample = 2;  %factor to downsample impulse stack laterally. Must be multiple of 2 and >= 1.
-axial_downsample = 2;  % Axial averageing of impulse stack. Must be multiple of 2 and >= 1.
+lateral_downsample = 1;  %factor to downsample impulse stack laterally. Must be multiple of 2 and >= 1.
+axial_downsample = 1;  % Axial averageing of impulse stack. Must be multiple of 2 and >= 1.
  
 % Allow user to use subset of Z. This is computed BEFORE downsampling by a
 % factor of AXIAL_DOWNSAMPLE
@@ -32,20 +32,18 @@ solverSettings.autotune = 1;    % default: 1
 solverSettings.mu_inc = 1.5; 
 solverSettings.mu_dec = 1.5;  %Inrement and decrement values for mu during autotune. Turn to 1 to have no tuning.
 solverSettings.resid_tol = 2;   % Primal/dual gap tolerance. Lower means more frequent tuning
-solverSettings.maxIter = 10; % Maximum iteration count  Default: 200
+solverSettings.maxIter = 300; % Maximum iteration count  Default: 200
 solverSettings.regularizer = 'tv';   %'TV' for 3D TV, 'native' for native. Default: TV
 solverSettings.cmap = 'gray';
 
 
 %Figures and display
 solverSettings.disp_percentile = 100;   %Percentile of max to set image scaling
-solverSettings.save_every = 3;   %Save image stack as .mat every N iterations. Use 0 to never save (except for at the end);
-if solverSettings.save_every
-    warning(' save_every is not enabled yet. Your result will only be saved at the end of processing.')
-end
+solverSettings.save_every = 0;   %Save image stack as .mat every N iterations. Use 0 to never save (except for at the end);
+
 
 %Folder for saving state. If it doesn't exist, create it. 
-solverSettings.save_dir = '../test2';
+solverSettings.save_dir = '../DiffuserCamResults/';
 
 solverSettings.disp_crop = @(x)gather(x(floor(size(x,1)/4):floor(size(x,1)*3/4),...
     floor(size(x,2)/4):floor(size(x,2)*3/4),:));
@@ -54,6 +52,7 @@ solverSettings.disp_figs = 1;   %If set to 0, never display. If set to N>=1, sho
 solverSettings.print_interval = 1;  %Print cost every N iterations. Default 1. If set to 0, don't print.
 fig_num = 1;   %Figure number to display in
 save_results = 1;
+solverSettings.save_vars = {'vk'};  % List of variable names. If empty or not included in settings file, defaults to just vk, the main volume
 
 useGpu = 1;  %Use GPU or not. 
 if useGpu  %Check if GPU is present. if not, disable GPU mode
