@@ -21,17 +21,17 @@ end_z = 0;   %Last plane to reconstruct. If set to 0, use last plane in file.
 % Populate solver options
  
 % Solver parameters
-solverSettings.tau = .000200;    %sparsity parameter for TV
+solverSettings.tau = .000600;    %sparsity parameter for TV
 solverSettings.tau_n = .0400;     %sparsity param for native sparsity
-solverSettings.mu1 = 1;    %Initialize ADMM tuning params. These will be updated automatically
-solverSettings.mu2 = 1;
+solverSettings.mu1 = 1;    %Initialize ADMM tuning params to 1. These will be updated automatically by the autotune. 
+solverSettings.mu2 = 1;    % To use fixed parameters, you'll have to hand tune. We recommend using autotune.
 solverSettings.mu3 = 1;
  
 % if set to 1, auto-find mu1, mu2, mu3 every step. If set to 0, use user defined values. If set to N>1, tune for N steps then stop.
 solverSettings.autotune = 1;    % default: 1
-solverSettings.mu_inc = 1.5; 
-solverSettings.mu_dec = 1.5;  %Inrement and decrement values for mu during autotune. Turn to 1 to have no tuning.
-solverSettings.resid_tol = 2;   % Primal/dual gap tolerance. Lower means more frequent tuning
+solverSettings.mu_inc = 1.1; 
+solverSettings.mu_dec = 1.1;  %Inrement and decrement values for mu during autotune. Turn to 1 to have no tuning. The algorithm is very insensitive to these parameters.
+solverSettings.resid_tol = 1.5;   % Primal/dual gap tolerance. Lower means more frequent tuning
 solverSettings.maxIter = 300; % Maximum iteration count  Default: 200
 solverSettings.regularizer = 'tv';   %'TV' for 3D TV, 'native' for native. Default: TV
 solverSettings.cmap = 'gray';
