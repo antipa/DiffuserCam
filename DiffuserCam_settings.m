@@ -54,15 +54,16 @@ fig_num = 1;   %Figure number to display in
 save_results = 1;
 solverSettings.save_vars = {'vk'};  % List of variable names. If empty or not included in settings file, defaults to just vk, the main volume
 
-useGpu = 1;  %Use GPU or not. 
-if useGpu  %Check if GPU is present. if not, disable GPU mode
-    try gpuDevice(1)
-        useGpu = 1;
-    catch
-        useGpu = 0;
-    end
-end
+solverSettings.gpu = 0;  %Use GPU or not. Use .5 to do some compute on GPU
+% if useGpu  %Check if GPU is present. if not, disable GPU mode
+%     try gpuDevice(1)
+%         useGpu = 1;
+%     catch
+%         useGpu = 0;
+%     end
+% end
 
 solverSettings.dtstamp = datestr(datetime('now'),'YYYYmmDD_hhMMss');
-
+solverSettings.padFracY = .5;
+solverSettings.padFracX = .5;
 

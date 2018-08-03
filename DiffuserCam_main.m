@@ -1,11 +1,11 @@
-function [xhat, f] = DiffuserCam_main(config,psf)
+function [xhat, f] = DiffuserCam_main(config,varargin)
 % Solve for image from DiffuserCam. First rev: 3D ADMM only. 
 % CONFIG: String with path to settings file. See DiffuserCam_settings.m for
 % details.
 
 % Read in settings
 run(config); %This should be a string path to a .m script that populates a bunch of variables in your workspace
-
+    
 %Make figure handle
 
 if solverSettings.disp_figs ~= 0
@@ -21,19 +21,30 @@ if (axial_downsample < 1 )
 end
 
 %% Load and prepare impulse stack
-% psf = load(impulse_mat_file_name,impulse_var_name);
-% psf = psf.(impulse_var_name);
+if isempty(varargin)
+    psf = load(impulse_mat_file_name,impulse_var_name);
+    psf = psf.(impulse_var_name);
+end
 
 % Get impulse dimensions
-[~,~, Nz_in] = size(psf);
+[Ny_in, Nx_in, Nz_in] = size(psf);
 
 if end_z == 0 || end_z > Nz_in
     end_z = Nz_in;
 end
 
 %crop the center, subtract bias
+
+if ~isfield(solverSettings,'center')
+    solverSettings.center = [1, Ny_in, 1, Nx_in];
+end
+
+if ~isfield(solverSettings,'normalization')
+    solverSettings.normalization = 0;
+end
+
 psf = psf(solverSettings.center(1):solverSettings.center(2),solverSettings.center(3):solverSettings.center(4),:);   %use half sensor
-psf = psf -psf_bias;
+psf = psf - psf_bias;
 
 % non-uniform axial downsampling
 % cut=30;
