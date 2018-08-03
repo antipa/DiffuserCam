@@ -9,8 +9,12 @@ if size(v,1) ~= 0  %If no v, h, or d passed in, skip gradient thresholding
         cat(2,h,zeros(size(h,1),1,size(h,3))).^2 + ...
         cat(3,d,zeros(size(d,1),size(d,2),1)).^2);
     magt = DiffuserCam_soft(mag,tau);
-    mmult = magt./mag;
-    mmult(mag==0) = 0;
+    mmult = gather(magt./mag);
+    clear magt;
+    loc = gather(mag==0);
+    clear mag;
+    mmult(loc) = 0;
+%     mmult(mag==0) = 0;
     varargout{1} = v.*mmult(1:end-1,:,:);
     varargout{2} = h.*mmult(:,1:end-1,:);
     varargout{3} = d.*mmult(:,:,1:end-1);

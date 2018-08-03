@@ -1,4 +1,4 @@
-function [vk, f] = ADMM3D_solver(psf,b,solverSettings)
+function [vk, f] = ADMM3D_solver_huge(psf,b,solverSettings)
 % ADMM solver to compute 3D diffusercam images
 % psf: Impulse stack 3D array
 % b: measurement image from camera
@@ -146,8 +146,24 @@ while n<solverSettings.maxIter
     wkp = max(rho/mu3 + vk,0);
     switch lower(solverSettings.regularizer)
         case('tv')
-            [uk1, uk2, uk3] = DiffuserCam_soft_3d(Lvk1+eta_1/mu2, Lvk2+eta_2/mu2, Lvk3+eta_3/mu2,solverSettings.tau/mu2);
-             vkp_numerator = mu3*(wkp-rho/mu3) + mu2*PsiT(uk1 - eta_1/mu2,uk2 - eta_2/mu2, uk3 - eta_3/mu2) + mu1*Hadj(nukp - xi/mu1);
+            %[uk1, uk2, uk3] = DiffuserCam_soft_3d(Lvk1+eta_1/mu2, Lvk2+eta_2/mu2, Lvk3+eta_3/mu2,solverSettings.tau/mu2);
+            v1=gpuArray(Lvk1+eta_1/mu2);v2=gpuArray(Lvk2+eta_2/mu2);v3=gpuArray(Lvk3+eta_3/mu2);v4=gpuArray(solverSettings.tau/mu2);
+            [uk1, uk2, uk3] = DiffuserCam_soft_3d(v1,v2,v3,v4); 
+            clear v1 v2 v3 v4
+            
+            %vkp_numerator = mu3*(wkp-rho/mu3) + mu2*PsiT(uk1 - eta_1/mu2,uk2 - eta_2/mu2, uk3 - eta_3/mu2) + mu1*Hadj(nukp - xi/mu1);
+            v5=gpuArray(nukp - xi/mu1);
+            v6=mu1*Hadj(v5); %3 item
+            clear v5
+            v0=mu3*gpuArray(wkp-rho/mu3); %1 item
+%             v1=gpuArray(uk1 - eta_1/mu2);v2=gpuArray(uk2 - eta_2/mu2);v3=gpuArray(uk3 - eta_3/mu2);
+            v1=uk1 - eta_1/mu2;v2=uk2 - eta_2/mu2;v3=uk3 - eta_3/mu2;
+            uk1 = gather(uk1);uk2 = gather(uk2);uk3 = gather(uk3);
+            v4=mu2*PsiT(v1,v2,v3); %2 item
+            clear v1 v2 v3
+            vkp_numerator = v0+v4+v6;
+            clear v0 v4 v6
+            
         case('tv_native')
             [uk1, uk2, uk3, uk4] = DiffuserCam_soft_3d(Lvk1 + eta_1/mu2, Lvk2 + eta_2/mu2, ...
                 Lvk3 + eta_3/mu2, solverSettings.tau/mu2, Lvk4 + eta_4/mu2);
@@ -159,15 +175,19 @@ while n<solverSettings.maxIter
             vkp_numerator = mu3*(wkp-rho/mu3) + mu2*PsiT(uk - eta/mu2) + mu1*Hadj(nukp - xi/mu1);
     end
     
+    %vkp = real(fftshift(ifftn(v_mult .* fftn(ifftshift(vkp_numerator)))));
+    vkp = fftn(ifftshift(vkp_numerator)); clear vkp_numerator;
+    vkp = v_mult .*vkp;
+    vkp = fftshift(ifftn(vkp));
+    vkp = real(vkp);
     
-    vkp = real(fftshift(ifftn(v_mult .* fftn(ifftshift(vkp_numerator)))));
-    clear vkp_numerator
     
     %Update dual and parameter for Hs=v constraint
-    Hvkp = Hfor(vkp);
+    Hvkp = Hfor(vkp); 
     r_sv = Hvkp-nukp;
     clear nukp;
-    xi = xi + mu1*r_sv;
+    xi = xi + gather(mu1*r_sv);
+    Hvk = gpuArray(Hvk);
     f.dual_resid_s(n) = gather(mu1*norm(vec(Hvk - Hvkp)));
     clear Hvk
     f.primal_resid_s(n) = gather(norm(vec(r_sv)));
@@ -175,29 +195,30 @@ while n<solverSettings.maxIter
     [mu1, mu1_update] = ADMM3D_update_param(mu1,solverSettings.resid_tol,solverSettings.mu_inc,solverSettings.mu_dec,f.primal_resid_s(n),f.dual_resid_s(n));
     
     % Update dual and parameter for Ls=v
-    f.data_fidelity(n) = gather(.5*norm(crop3d(Hvkp)-b,'fro')^2);
+    f.data_fidelity(n) = gather(.5*norm(crop3d(Hvkp)-b,'fro')^2);Hvkp = gather(Hvkp);
     switch lower(solverSettings.regularizer)
         case('tv')
-            Lvk1_ = Lvk1;
-            Lvk2_ = Lvk2;
-            Lvk3_ = Lvk3;
-            [Lvk1, Lvk2, Lvk3] = Psi(vkp);
+            Lvk1_ = gpuArray(Lvk1);
+            Lvk2_ = gpuArray(Lvk2);
+            Lvk3_ = gpuArray(Lvk3);
+            [Lvk1, Lvk2, Lvk3] = Psi(vkp);vkp = gather(vkp);
+            f.dual_resid_u(n) = gather(mu2*sqrt(norm(vec(Lvk1_ - Lvk1))^2 + norm(vec(Lvk2_ - Lvk2))^2 + norm(vec(Lvk3_ - Lvk3))^2));
+            clear Lvk1_ Lvk2_ Lvk3_;
+            f.regularizer_penalty(n) = gather(solverSettings.tau*(sum(vec(abs(Lvk1))) + sum(vec(abs(Lvk2))) + sum(vec(abs(Lvk3)))));
+            
             r_su_1 = Lvk1 - uk1; 
             r_su_2 = Lvk2 - uk2;
             r_su_3 = Lvk3 - uk3;
             clear uk1 uk2 uk3;
+            f.primal_resid_u(n) = gather(sqrt(norm(vec(r_su_1))^2 + norm(vec(r_su_2))^2 + norm(vec(r_su_3))^2));
+            
+            Lvk1 = gather(Lvk1);Lvk2 = gather(Lvk2);Lvk3 = gather(Lvk3);
+            r_su_1 = gather(r_su_1);r_su_2 = gather(r_su_2);r_su_3 = gather(r_su_3);
+            
             eta_1 = eta_1 + mu2*r_su_1;
             eta_2 = eta_2 + mu2*r_su_2;
             eta_3 = eta_3 + mu2*r_su_3;
-%             f.dual_resid_u(n) = gather(mu2*sqrt(norm(vec(Lvk1_ - Lvk1))^2 + norm(vec(Lvk2_ - Lvk2))^2 + norm(vec(Lvk3_ - Lvk3))^2));
-            f.dual_resid_u(n) = mu2*sqrt(norm(vec(gather(Lvk1_) - gather(Lvk1)))^2 + norm(vec(gather(Lvk2_)...
-                - gather(Lvk2)))^2 + norm(vec(gather(Lvk3_) - gather(Lvk3)))^2);
-            clear Lvk1_ Lvk2_ Lvk3_;
-%             f.primal_resid_u(n) = gather(sqrt(norm(vec(r_su_1))^2 + norm(vec(r_su_2))^2 + norm(vec(r_su_3))^2));
-            f.primal_resid_u(n) = sqrt(norm(vec(gather(r_su_1)))^2 + norm(vec(gather(r_su_2)))^2 + norm(vec(gather(r_su_3)))^2);
             clear r_su_1 r_su_2 r_su_3;
-%             f.regularizer_penalty(n) = gather(solverSettings.tau*(sum(vec(abs(Lvk1))) + sum(vec(abs(Lvk2))) + sum(vec(abs(Lvk3)))));
-            f.regularizer_penalty(n) = solverSettings.tau*(sum(vec(abs(gather(Lvk1)))) + sum(vec(abs(gather(Lvk2)))) + sum(vec(abs(gather(Lvk3)))));
 
         case('tv_native')
             Lvk1_ = Lvk1;
@@ -246,8 +267,8 @@ while n<solverSettings.maxIter
     r_sw = vkp - wkp;
     clear wkp;
     rho = rho + mu3*r_sw;
-    f.dual_resid_w(n) = gather(mu3*norm(vec(vk - vkp )));
-    f.primal_resid_w(n) = gather(norm(vec(r_sw)));
+    f.dual_resid_w(n) = mu3*norm(vec(vk - vkp ));
+    f.primal_resid_w(n) = norm(vec(r_sw));
     [mu3, mu3_update] = ADMM3D_update_param(mu3,solverSettings.resid_tol,solverSettings.mu_inc,solverSettings.mu_dec,f.primal_resid_w(n),f.dual_resid_w(n));
     
     %Update filters
@@ -348,7 +369,6 @@ function PsiTPsi = generate_laplacian(lapl)  %Takes in an array and makes laplac
     lapl(end,1,1) = -1;
     lapl(1,1,end) = -1;
     PsiTPsi = abs(fftn(gather(lapl)));   %Compute power spectrum of laplacian
-    PsiTPsi = gpuArray(PsiTPsi);
 end
 
 function [mu_out, mu_update] = ADMM3D_update_param(mu,resid_tol,mu_inc,mu_dec,r,s)
