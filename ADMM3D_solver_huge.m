@@ -127,15 +127,17 @@ n = 0;  %Initialize number of steps to 0
 
 % Store solver parameters in structure, f
 % Initialize residuals with NaNs
-f.dual_resid_s = zeros(1,solverSettings.maxIter)./0;   
-f.primal_resid_s = zeros(1,solverSettings.maxIter)./0;
-f.dual_resid_u = f.dual_resid_s;
-f.primal_resid_u = f.dual_resid_u;
-f.dual_resid_w = f.dual_resid_s;
-f.primal_resid_w = f.dual_resid_s;
-f.objective = f.primal_resid_u;   
-f.data_fidelity = f.primal_resid_u;
-f.regularizer_penalty = f.primal_resid_u;
+if solverSettings.autotune
+    f.dual_resid_s = zeros(1,solverSettings.maxIter)./0;   
+    f.primal_resid_s = zeros(1,solverSettings.maxIter)./0;
+    f.dual_resid_u = f.dual_resid_s;
+    f.primal_resid_u = f.dual_resid_u;
+    f.dual_resid_w = f.dual_resid_s;
+    f.primal_resid_w = f.dual_resid_s;
+end
+f.objective = zeros(1,solverSettings.maxIter)./0;   
+f.data_fidelity = f.objective;
+f.regularizer_penalty = f.objective;
 Hvkp = vk;
 
 %%
@@ -194,12 +196,11 @@ while n<solverSettings.maxIter
     Hvkp = gather(Hvkp);    
     
     r_sv = Hvkp-nukp;
-
-    f.dual_resid_s(n) = mu1*norm(vec(Hvk - Hvkp));
-    f.primal_resid_s(n) = norm(vec(r_sv));
     
     xi = xi + mu1*r_sv;
     if solverSettings.autotune
+        f.dual_resid_s(n) = mu1*norm(vec(Hvk - Hvkp));
+        f.primal_resid_s(n) = norm(vec(r_sv));
         [mu1, mu1_update] = ADMM3D_update_param(mu1,solverSettings.resid_tol,solverSettings.mu_inc,solverSettings.mu_dec,f.primal_resid_s(n),f.dual_resid_s(n));
     end
     
@@ -207,20 +208,15 @@ while n<solverSettings.maxIter
     f.data_fidelity(n) = .5*norm(crop3d(Hvkp)-b,'fro')^2;
     switch lower(solverSettings.regularizer)
         case('tv')
-            Lvk1_ = gpuArray(Lvk1);
-            Lvk2_ = gpuArray(Lvk2);
-            Lvk3_ = gpuArray(Lvk3);
+            Lvk1_ = Lvk1;
+            Lvk2_ = Lvk2;
+            Lvk3_ = Lvk3;
             [Lvk1, Lvk2, Lvk3] = Psi(vkp);vkp = gather(vkp);
-            f.dual_resid_u(n) = gather(mu2*sqrt(norm(vec(Lvk1_ - Lvk1))^2 + norm(vec(Lvk2_ - Lvk2))^2 + norm(vec(Lvk3_ - Lvk3))^2));
-            clear Lvk1_ Lvk2_ Lvk3_;
             f.regularizer_penalty(n) = gather(solverSettings.tau*(sum(vec(abs(Lvk1))) + sum(vec(abs(Lvk2))) + sum(vec(abs(Lvk3)))));
-            
             Lvk1 = gather(Lvk1);Lvk2 = gather(Lvk2);Lvk3 = gather(Lvk3);
             r_su_1 = Lvk1 - uk1; 
             r_su_2 = Lvk2 - uk2;
             r_su_3 = Lvk3 - uk3;
-            
-            f.primal_resid_u(n) = gather(sqrt(norm(vec(r_su_1))^2 + norm(vec(r_su_2))^2 + norm(vec(r_su_3))^2));
 
             % Update duals
             eta_1 = eta_1 + mu2*r_su_1;
@@ -229,6 +225,8 @@ while n<solverSettings.maxIter
             
             % Update mu2
             if solverSettings.autotune
+                f.dual_resid_u(n) = gather(mu2*sqrt(norm(vec(Lvk1_ - Lvk1))^2 + norm(vec(Lvk2_ - Lvk2))^2 + norm(vec(Lvk3_ - Lvk3))^2));
+                f.primal_resid_u(n) = gather(sqrt(norm(vec(r_su_1))^2 + norm(vec(r_su_2))^2 + norm(vec(r_su_3))^2));
                 [mu2, mu2_update] = ADMM3D_update_param(mu2,solverSettings.resid_tol,...
                     solverSettings.mu_inc,solverSettings.mu_dec,...
                     f.primal_resid_u(n),f.dual_resid_u(n));                
@@ -275,12 +273,10 @@ while n<solverSettings.maxIter
     % Update nonnegativity dual and parameter (s=w)
     r_sw = vkp - wkp;
     
-    f.dual_resid_w(n) = mu3*norm(vec(vk - vkp ));
-    f.primal_resid_w(n) = norm(vec(r_sw));
-    
-    rho = rho + mu3*r_sw;
-    
+    rho = rho + mu3*r_sw; 
     if solverSettings.autotune
+        f.dual_resid_w(n) = mu3*norm(vec(vk - vkp ));
+        f.primal_resid_w(n) = norm(vec(r_sw));
         [mu3, mu3_update] = ADMM3D_update_param(mu3,solverSettings.resid_tol,solverSettings.mu_inc,solverSettings.mu_dec,f.primal_resid_w(n),f.dual_resid_w(n));
     end
     
@@ -304,9 +300,13 @@ while n<solverSettings.maxIter
     
     if mod(n,solverSettings.print_interval) == 0
         t_iter = toc/solverSettings.print_interval;
-         fprintf('iter: %i \t t: %.2g \t cost: %.2g \t data_fidelity: %.2g \t norm: %.2g \t Primal v: %.2g \t Dual v: %.2g \t Primal u: %.2g \t Dual u: %.2g \t Primal w: %.2g \t Dual w: %.2g \t mu1: %.2g \t mu2: %.2g \t mu3: %.2g \n',...
+        if solverSettings.autotune
+            fprintf('iter: %i \t t: %.2g \t cost: %.2g \t data_fidelity: %.2g \t norm: %.2g \t Primal v: %.2g \t Dual v: %.2g \t Primal u: %.2g \t Dual u: %.2g \t Primal w: %.2g \t Dual w: %.2g \t mu1: %.2g \t mu2: %.2g \t mu3: %.2g \n',...
             n,t_iter,f.objective(n),f.data_fidelity(n),f.regularizer_penalty(n),f.primal_resid_s(n), f.dual_resid_s(n),f.primal_resid_u(n), f.dual_resid_u(n),f.primal_resid_w(n), f.dual_resid_w(n),mu1,mu2,mu3)
-            %disp([n,f.objective(n),f.data_fidelity(n),f.regularizer_penalty(n),f.primal_resid_s(n), f.dual_resid_s(n),f.primal_resid_u(n), f.dual_resid_u(n),f.primal_resid_w(n), f.dual_resid_w(n),mu1,mu2,mu3])
+        else
+            fprintf('iter: %i \t t: %.2g \t cost: %.2g \t data_fidelity: %.2g \t norm: %.2g \t mu1: %.2g \t mu2: %.2g \t mu3: %.2g \n',...
+            n,t_iter,f.objective(n),f.data_fidelity(n),f.regularizer_penalty(n),mu1,mu2,mu3)
+        end
         tic;
     end
     if mod(n,solverSettings.disp_figs) == 0
