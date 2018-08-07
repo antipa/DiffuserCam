@@ -4,6 +4,7 @@ function [vk, f] = ADMM3D_solver_huge(psf,b,solverSettings)
 % b: measurement image from camera
 % solverSettings: user defined params. See DiffuserCam_settings.m for details
 
+%update dual first, then update parameters
 assert(size(psf,1) == size(b,1) || size(psf,2) == size(b,2),'image and impulse have different dimensions');
 
 if ~isfield(solverSettings,'print_interval')
@@ -57,16 +58,17 @@ else
 end
 
 vec = @(X)reshape(X,numel(X),1);
+psf = gpuArray(psf);
 psf = circshift(flip(psf,3),ceil(Nz/2)+1,3)/norm(psf(:));  %Shift impulse stack and normalize
 Hs = fftn(ifftshift(pad2d(psf)));  %Compute 3D spectrum
+Hs = gather(Hs);
 clear psf
 Hs_conj = conj(Hs);
-Hfor = @(x)real(fftshift(ifftn(Hs.*fftn(ifftshift(x)))));
-Hadj = @(x)real(fftshift(ifftn(Hs_conj.*fftn(ifftshift(x)))));
+%Hfor = @(x)real(fftshift(ifftn(Hs.*fftn(ifftshift(x)))));
+%Hadj = @(x)real(fftshift(ifftn(Hs_conj.*fftn(ifftshift(x)))));
 HtH = abs(Hs.*Hs_conj);
 
 vk = 0*real(Hs);   %Initialize variables. vk is the primal (this is the image you want to find)
-clear Hs Hs_conj
 xi = vk;  % Dual associated with Mv = nu (boundary condition variables)
 rho = vk;  % Dual associated with v = w   (nonnegativity)
 Dtb = pad3d(b);
@@ -141,7 +143,6 @@ tic
 while n<solverSettings.maxIter
     n = n+1;
     Hvk = Hvkp;
-    clear Hvkp
     nukp = nu_mult.*(mu1*(xi/mu1 + Hvk) + Dtb);
     wkp = max(rho/mu3 + vk,0);
     switch lower(solverSettings.regularizer)
@@ -153,8 +154,11 @@ while n<solverSettings.maxIter
             
             %vkp_numerator = mu3*(wkp-rho/mu3) + mu2*PsiT(uk1 - eta_1/mu2,uk2 - eta_2/mu2, uk3 - eta_3/mu2) + mu1*Hadj(nukp - xi/mu1);
             v5=gpuArray(nukp - xi/mu1);
-            v6=mu1*Hadj(v5); %3 item
-            clear v5
+            %v6=mu1*Hadj(v5); %3 item
+            v6 = fftn(ifftshift(v5)); clear v5;
+            v6 = Hs_conj.*v6;  
+            v6 = mu1*real(fftshift(ifftn(v6))); %3 item
+            %v6 = mu1*real(v6);
             v0=mu3*gpuArray(wkp-rho/mu3); %1 item
 %             v1=gpuArray(uk1 - eta_1/mu2);v2=gpuArray(uk2 - eta_2/mu2);v3=gpuArray(uk3 - eta_3/mu2);
             v1=uk1 - eta_1/mu2;v2=uk2 - eta_2/mu2;v3=uk3 - eta_3/mu2;
@@ -177,25 +181,30 @@ while n<solverSettings.maxIter
     
     %vkp = real(fftshift(ifftn(v_mult .* fftn(ifftshift(vkp_numerator)))));
     vkp = fftn(ifftshift(vkp_numerator)); clear vkp_numerator;
-    vkp = v_mult .*vkp;
-    vkp = fftshift(ifftn(vkp));
-    vkp = real(vkp);
+    vkp = v_mult.*vkp;
+    vkp = real(fftshift(ifftn(vkp)));
     
     
     %Update dual and parameter for Hs=v constraint
-    Hvkp = Hfor(vkp); 
+%     Hvkp = Hfor(vkp); 
+%     Hfor = @(x)real(fftshift(ifftn(Hs.*fftn(ifftshift(x)))));
+    Hvkp = fftn(ifftshift(vkp));
+    Hvkp = Hs.*Hvkp;
+    Hvkp = real((fftshift(ifftn(Hvkp))));
+    Hvkp = gather(Hvkp);    
+    
     r_sv = Hvkp-nukp;
-    clear nukp;
-    xi = xi + gather(mu1*r_sv);
-    Hvk = gpuArray(Hvk);
-    f.dual_resid_s(n) = gather(mu1*norm(vec(Hvk - Hvkp)));
-    clear Hvk
-    f.primal_resid_s(n) = gather(norm(vec(r_sv)));
-    clear r_sv
-    [mu1, mu1_update] = ADMM3D_update_param(mu1,solverSettings.resid_tol,solverSettings.mu_inc,solverSettings.mu_dec,f.primal_resid_s(n),f.dual_resid_s(n));
+
+    f.dual_resid_s(n) = mu1*norm(vec(Hvk - Hvkp));
+    f.primal_resid_s(n) = norm(vec(r_sv));
+    
+    xi = xi + mu1*r_sv;
+    if solverSettings.autotune
+        [mu1, mu1_update] = ADMM3D_update_param(mu1,solverSettings.resid_tol,solverSettings.mu_inc,solverSettings.mu_dec,f.primal_resid_s(n),f.dual_resid_s(n));
+    end
     
     % Update dual and parameter for Ls=v
-    f.data_fidelity(n) = gather(.5*norm(crop3d(Hvkp)-b,'fro')^2);Hvkp = gather(Hvkp);
+    f.data_fidelity(n) = .5*norm(crop3d(Hvkp)-b,'fro')^2;
     switch lower(solverSettings.regularizer)
         case('tv')
             Lvk1_ = gpuArray(Lvk1);
@@ -206,19 +215,24 @@ while n<solverSettings.maxIter
             clear Lvk1_ Lvk2_ Lvk3_;
             f.regularizer_penalty(n) = gather(solverSettings.tau*(sum(vec(abs(Lvk1))) + sum(vec(abs(Lvk2))) + sum(vec(abs(Lvk3)))));
             
+            Lvk1 = gather(Lvk1);Lvk2 = gather(Lvk2);Lvk3 = gather(Lvk3);
             r_su_1 = Lvk1 - uk1; 
             r_su_2 = Lvk2 - uk2;
             r_su_3 = Lvk3 - uk3;
-            clear uk1 uk2 uk3;
+            
             f.primal_resid_u(n) = gather(sqrt(norm(vec(r_su_1))^2 + norm(vec(r_su_2))^2 + norm(vec(r_su_3))^2));
-            
-            Lvk1 = gather(Lvk1);Lvk2 = gather(Lvk2);Lvk3 = gather(Lvk3);
-            r_su_1 = gather(r_su_1);r_su_2 = gather(r_su_2);r_su_3 = gather(r_su_3);
-            
+
+            % Update duals
             eta_1 = eta_1 + mu2*r_su_1;
             eta_2 = eta_2 + mu2*r_su_2;
             eta_3 = eta_3 + mu2*r_su_3;
-            clear r_su_1 r_su_2 r_su_3;
+            
+            % Update mu2
+            if solverSettings.autotune
+                [mu2, mu2_update] = ADMM3D_update_param(mu2,solverSettings.resid_tol,...
+                    solverSettings.mu_inc,solverSettings.mu_dec,...
+                    f.primal_resid_u(n),f.dual_resid_u(n));                
+            end
 
         case('tv_native')
             Lvk1_ = Lvk1;
@@ -257,30 +271,31 @@ while n<solverSettings.maxIter
             f.regularizer_penalty(n) = gather(solverSettings.tau_n*(sum(vec(abs(Lvk)))));
     end
     f.objective(n) = f.data_fidelity(n) + f.regularizer_penalty(n);
-    
-    
-    [mu2, mu2_update] = ADMM3D_update_param(mu2,solverSettings.resid_tol,...
-        solverSettings.mu_inc,solverSettings.mu_dec,...
-        f.primal_resid_u(n),f.dual_resid_u(n));
-    
+   
     % Update nonnegativity dual and parameter (s=w)
     r_sw = vkp - wkp;
-    clear wkp;
-    rho = rho + mu3*r_sw;
+    
     f.dual_resid_w(n) = mu3*norm(vec(vk - vkp ));
     f.primal_resid_w(n) = norm(vec(r_sw));
-    [mu3, mu3_update] = ADMM3D_update_param(mu3,solverSettings.resid_tol,solverSettings.mu_inc,solverSettings.mu_dec,f.primal_resid_w(n),f.dual_resid_w(n));
+    
+    rho = rho + mu3*r_sw;
+    
+    if solverSettings.autotune
+        [mu3, mu3_update] = ADMM3D_update_param(mu3,solverSettings.resid_tol,solverSettings.mu_inc,solverSettings.mu_dec,f.primal_resid_w(n),f.dual_resid_w(n));
+    end
     
     %Update filters
-    if mu1_update || mu2_update || mu3_update
-        %fprintf('Mu updates: %i \t %i \t %i\n',mu1_update, mu2_update, mu3_update);
-        mu_update = 1;
-    else
-        mu_update = 0;
-    end
-    if mu_update
-        v_mult = 1./(mu1*HtH + mu2*PsiTPsi + mu3);  %This is the frequency space division fo S update
-        nu_mult = 1./(DtD + mu1);
+    if solverSettings.autotune
+        if mu1_update || mu2_update || mu3_update
+            %fprintf('Mu updates: %i \t %i \t %i\n',mu1_update, mu2_update, mu3_update);
+            mu_update = 1;
+        else
+            mu_update = 0;
+        end
+        if mu_update
+            v_mult = 1./(mu1*HtH + mu2*PsiTPsi + mu3);  %This is the frequency space division fo S update
+            nu_mult = 1./(DtD + mu1);
+        end
     end
     
     
@@ -383,5 +398,3 @@ function [mu_out, mu_update] = ADMM3D_update_param(mu,resid_tol,mu_inc,mu_dec,r,
         mu_update = 0;
     end
 end
-    
-    
