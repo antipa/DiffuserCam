@@ -1,11 +1,11 @@
-function [xhat, f] = DiffuserCam_main(config,varargin)
+function [xhat, f] = DiffuserCam_main(config,psf)
 % Solve for image from DiffuserCam. First rev: 3D ADMM only. 
 % CONFIG: String with path to settings file. See DiffuserCam_settings.m for
 % details.
 
 % Read in settings
 run(config); %This should be a string path to a .m script that populates a bunch of variables in your workspace
-    
+
 %Make figure handle
 
 if solverSettings.disp_figs ~= 0
@@ -21,30 +21,21 @@ if (axial_downsample < 1 )
 end
 
 %% Load and prepare impulse stack
-if isempty(varargin)
+if isempty(psf)
     psf = load(impulse_mat_file_name,impulse_var_name);
     psf = psf.(impulse_var_name);
 end
 
 % Get impulse dimensions
-[Ny_in, Nx_in, Nz_in] = size(psf);
+[~,~, Nz_in] = size(psf);
 
 if end_z == 0 || end_z > Nz_in
     end_z = Nz_in;
 end
 
 %crop the center, subtract bias
-
-if ~isfield(solverSettings,'center')
-    solverSettings.center = [1, Ny_in, 1, Nx_in];
-end
-
-if ~isfield(solverSettings,'normalization')
-    solverSettings.normalization = 0;
-end
-
 psf = psf(solverSettings.center(1):solverSettings.center(2),solverSettings.center(3):solverSettings.center(4),:);   %use half sensor
-psf = psf - psf_bias;
+psf = psf -psf_bias;
 
 % non-uniform axial downsampling
 % cut=30;
@@ -74,6 +65,7 @@ if solverSettings.normalization
         psf(:,:,n) = psf(:,:,n)/psfn;
     end
 end
+
 %% Load image file and adjust to impulse size.
 raw_in = imread(image_file);
 raw_in = raw_in - image_bias;
@@ -112,8 +104,10 @@ if solverSettings.gpu==1
     [xhat, f] = ADMM3D_solver(gpuArray(single(psf)),gpuArray(single(b)),solverSettings);
 elseif solverSettings.gpu==0
     [xhat, f] = ADMM3D_solver(single(psf),single(b),solverSettings);
-elseif solverSettings.gpu==0.5
+elseif solverSettings.gpu==0.5 && solverSettings.update_order==1
     [xhat, f] = ADMM3D_solver_huge(single(psf),single(b),solverSettings);
+elseif solverSettings.gpu==0.5 && solverSettings.update_order==0
+    [xhat, f] = ADMM3D_solver_huge2(single(psf),single(b),solverSettings);
 end
 
 
