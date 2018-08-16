@@ -21,7 +21,7 @@ if (axial_downsample < 1 )
 end
 
 %% Load and prepare impulse stack
-if isempty(psf)
+if exist('psf')==0
     psf = load(impulse_mat_file_name,impulse_var_name);
     psf = psf.(impulse_var_name);
 end
@@ -131,4 +131,3 @@ if save_results
     end
     copyfile(config,[solverSettings.save_dir,'/',config_fname,'_',dtstamp,'.m'])  %Copy settings into save directory
 end
-
