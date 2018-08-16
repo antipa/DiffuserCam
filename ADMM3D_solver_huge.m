@@ -43,17 +43,23 @@ mu3 = solverSettings.mu3;
 [Ny, Nx, Nz] = size(psf);   %Get problem size
 
 % Setup convolutional forward op
-p1 = floor(Ny/2);
-p2 = floor(Nx/2);
+p1 = floor(Ny * solverSettings.padFracY);
+p2 = floor(Nx * solverSettings.padFracX);
 %h(p1,p2,Nz/2) = 1;
-if solverSettings.pad
-    pad2d = @(x)padarray(x,[p1,p2],'both');  %2D padding
-    pad3d = @(x)padarray(pad2d(x),[0 0 Nz-1],'post');
+pad2d = @(x)padarray(x,[p1,p2],'both');  %2D padding
+pad3d = @(x)padarray(pad2d(x),[0 0 Nz-1],'post');
+if solverSettings.crop_circle
+    [xx,yy] = ndgrid((1:Ny)-solverSettings.ci(1),(1:Nx)-solverSettings.ci(2));
+    mask = double((xx.^2 + yy.^2)<solverSettings.ci(3)^2);
+    % mask = ones(size(mask)); % no mask test
+    crop3d = @(x)x(:,:,1).*mask;
+else
     crop2d = @(x)x(p1+1:end-p1,p2+1:end-p2,:); %2D cropping
     crop3d = @(x)crop2d(x(:,:,1));   %3D cropping. This is D
-else
+end
+if p1==0 && p2==0
     pad2d = @(x)x;
-    pad3d = @(x)padarray(pad2d(x),[0 0 Nz-1],'post');
+    pad3d = @(x)padarray(x,[0 0 Nz-1],'post');
     crop3d = @(x)x(:,:,1);
 end
 
