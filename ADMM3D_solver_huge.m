@@ -4,6 +4,8 @@ function [vk, f] = ADMM3D_solver_huge(psf,b,solverSettings)
 % b: measurement image from camera
 % solverSettings: user defined params. See DiffuserCam_settings.m for details
 
+f.psf_norm = solverSettings.psfn;
+
 %update dual first, then update parameters
 assert(size(psf,1) == size(b,1) || size(psf,2) == size(b,2),'image and impulse have different dimensions');
 
@@ -325,6 +327,9 @@ end
 % Private function to display figures
 function draw_figures(xk, solverSettings)
 set(0,'CurrentFigure',solverSettings.fighandle)
+if solverSettings.normalization  %multiply normalization back
+    xk = bsxfun(@times,xk,reshape(solverSettings.psfn,1,1,[]));
+end
 if numel(size(xk))==2
     imagesc(solverSettings.disp_func(xk))
     axis image

@@ -58,13 +58,16 @@ end
 [Ny, Nx, Nz] = size(psf);
 
 % Normalize each slice
+psfn = zeros(Nz,1); %record norm of each slice, multiply each slice in the end
 if solverSettings.normalization
     psf = single(psf);
     for n = 1:Nz
-        psfn = norm(psf(:,:,n),'fro');
-        psf(:,:,n) = psf(:,:,n)/psfn;
+        psfn(n) = norm(psf(:,:,n),'fro');
+        psf(:,:,n) = psf(:,:,n)/psfn(n);
     end
 end
+solverSettings.psfn=psfn;
+clear psfn
 
 %% Load image file and adjust to impulse size.
 raw_in = imread(image_file);
