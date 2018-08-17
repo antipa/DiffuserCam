@@ -321,6 +321,12 @@ while n<solverSettings.maxIter
     if mod(n,solverSettings.disp_figs) == 0
         draw_figures(vk,solverSettings)
     end
+    if mod(n,solverSettings.save_every) == 0
+        vk_out = gather(vk);
+        filename = [solverSettings.save_dir,'\state_',num2str(n),'tau_',num2str(solverSettings.tau)];
+        save(filename,'vk_out');   %Save result
+        saveas(gcf,filename,'png');
+    end
 end
 end
 

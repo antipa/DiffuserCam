@@ -1,7 +1,8 @@
-function [vk, f] = ADMM3D_solver(psf,b,solverSettings)
+function [vk, f] = ADMM3D_solver(psf,b,vk,solverSettings)
 % ADMM solver to compute 3D diffusercam images
 % psf: Impulse stack 3D array
 % b: measurement image from camera
+% vk: initialize variables. vk is the primal (this is the image you want to find)
 % solverSettings: user defined params. See DiffuserCam_settings.m for details
 
 f.psf_norm = solverSettings.psfn; %save norm of each psf
@@ -75,7 +76,8 @@ Hfor = @(x)real(fftshift(ifftn(Hs.*fftn(ifftshift(x)))));
 Hadj = @(x)real(fftshift(ifftn(Hs_conj.*fftn(ifftshift(x)))));
 HtH = abs(Hs.*Hs_conj);
 
-vk = 0*real(Hs);   %Initialize variables. vk is the primal (this is the image you want to find)
+% vk = 0*real(Hs);   
+vk = pad2d(vk);
 clear Hs Hs_conj
 xi = vk;  % Dual associated with Mv = nu (boundary condition variables)
 rho = vk;  % Dual associated with v = w   (nonnegativity)
@@ -285,6 +287,12 @@ while n<solverSettings.maxIter
     end
     if mod(n,solverSettings.disp_figs) == 0
         draw_figures(vk,solverSettings)
+    end
+    if mod(n,solverSettings.save_every) == 0
+        vk_out = gather(vk);
+        filename = [solverSettings.save_dir,'\state_',num2str(n),'tau_',num2str(solverSettings.tau)];
+        save(filename,'vk_out');   %Save result
+        saveas(gcf,filename,'png');
     end
 end
 end

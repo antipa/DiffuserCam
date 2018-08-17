@@ -1,4 +1,4 @@
-function [xhat, f] = DiffuserCam_main(config,psf)
+function [xhat, f] = DiffuserCam_main(config,psf,init)
 % Solve for image from DiffuserCam. First rev: 3D ADMM only. 
 % CONFIG: String with path to settings file. See DiffuserCam_settings.m for
 % details.
@@ -69,6 +69,14 @@ end
 solverSettings.psfn=psfn;
 clear psfn
 
+%% initialization
+switch lower(solverSettings.initialization) 
+    case('zero')
+        vk = 0*psf;
+    case('xhat')
+        vk = init;
+end
+
 %% Load image file and adjust to impulse size.
 raw_in = imread(image_file);
 raw_in = raw_in - image_bias;
@@ -101,29 +109,26 @@ if exist([out_file,'.mat'],'file')
     fprintf('file already exists. Adding datetime stamp to avoid overwriting. \n');
     out_file = [out_file,'_',dtstamp];
 end
-    
+if solverSettings.save_dir(end) == '/'
+    solverSettings.save_dir = solverSettings.save_dir(1:end-1);
+end
+if ~exist(solverSettings.save_dir,'dir')
+    mkdir(solverSettings.save_dir);
+end
     
 if solverSettings.gpu==1
-    [xhat, f] = ADMM3D_solver(gpuArray(single(psf)),gpuArray(single(b)),solverSettings);
+    [xhat, f] = ADMM3D_solver(gpuArray(single(psf)),gpuArray(single(b)),gpuArray(single(vk)),solverSettings);
 elseif solverSettings.gpu==0
-    [xhat, f] = ADMM3D_solver(single(psf),single(b),solverSettings);
+    [xhat, f] = ADMM3D_solver(single(psf),single(b),single(vk),solverSettings);
 elseif solverSettings.gpu==0.5 && solverSettings.update_order==1
-    [xhat, f] = ADMM3D_solver_huge(single(psf),single(b),solverSettings);
+    [xhat, f] = ADMM3D_solver_huge(single(psf),single(b),single(vk),solverSettings);
 elseif solverSettings.gpu==0.5 && solverSettings.update_order==0
-    [xhat, f] = ADMM3D_solver_huge2(single(psf),single(b),solverSettings);
+    [xhat, f] = ADMM3D_solver_huge2(single(psf),single(b),single(vk),solverSettings);
 end
 
 
-if save_results
+if save_results==1 && solverSettings.save_every==0
     %Setup output folder
-    if solverSettings.save_dir(end) == '/'
-        solverSettings.save_dir = solverSettings.save_dir(1:end-1);
-    end
-
-    if ~exist(solverSettings.save_dir,'dir')
-        mkdir(solverSettings.save_dir);
-    end
-    
     xhat_out = gather(xhat);
     save([out_file,'.mat'],'xhat_out','b','f');   %Save result
     slashes = strfind(config,'/');
