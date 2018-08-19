@@ -358,7 +358,11 @@ elseif numel(size(xk))==3
     axis image
     colormap (solverSettings.cmap)
     %colorbar
-    caxis([0 prctile(im1(:),solverSettings.disp_percentile)])
+    if solverSettings.disp_auto
+        caxis([0 prctile(im1(:),solverSettings.disp_percentile)])
+    else
+        caxis(solverSettings.colormap_axis)
+    end
     set(gca,'fontSize',6)
     axis off
     title('XY')
@@ -372,7 +376,11 @@ elseif numel(size(xk))==3
     colormap (solverSettings.cmap)
     %colorbar
     set(gca,'fontSize',8)
-    caxis([0 prctile(im2(:),solverSettings.disp_percentile)])
+    if solverSettings.disp_auto
+        caxis([0 prctile(im2(:),solverSettings.disp_percentile)])
+    else
+        caxis(solverSettings.colormap_axis)
+    end
     title('XZ')
     axis off
     hold off
@@ -384,10 +392,14 @@ elseif numel(size(xk))==3
     hold on
     %axis image
     colormap (solverSettings.cmap)
-    title('YZ')
-    colorbar   
+    title('YZ')   
     set(gca,'fontSize',8)
-    caxis([0 prctile(im3(:),solverSettings.disp_percentile)]);
+    if solverSettings.disp_auto
+        caxis([0 prctile(im3(:),solverSettings.disp_percentile)])
+    else
+        caxis(solverSettings.colormap_axis)
+    end
+    colorbar
     axis off
     hold off
     

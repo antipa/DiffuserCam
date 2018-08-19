@@ -138,6 +138,7 @@ if save_results==1 && solverSettings.save_every==0
     end
     save([out_file,'.mat'],'xhat_out','b','f');   %Save result
     saveas(gcf,[out_file,'.png']);
+    saveas(gcf,[out_file,'.fig']);
 end
 if save_settings
     slashes = strfind(config,'/');
