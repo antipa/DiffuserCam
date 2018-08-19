@@ -1,10 +1,13 @@
-function [xhat, f] = DiffuserCam_main(config,psf,init)
+function [xhat, f] = DiffuserCam_main(config,psf,layer,init)
 % Solve for image from DiffuserCam. First rev: 3D ADMM only. 
 % CONFIG: String with path to settings file. See DiffuserCam_settings.m for
 % details.
 
 % Read in settings
 run(config); %This should be a string path to a .m script that populates a bunch of variables in your workspace
+image_file = [input_folder,'\video3_MMStack_Pos0.ome00000',num2str(layer,'%03d'),'.tif'] ;
+out_file = [solverSettings.save_dir,'\layer_',num2str(layer)];
+
 
 %Make figure handle
 
@@ -103,7 +106,7 @@ b = imresize(b,[Ny, Nx],'box');
 b = b/max(b(:));  %Normalize to 16-bit range
 
 %% Solver stuff
-out_file = [solverSettings.save_dir,'\state_',num2str(solverSettings.maxIter),'tau_',num2str(solverSettings.tau)];
+% out_file = [solverSettings.save_dir,'\state_',num2str(solverSettings.maxIter),'tau_',num2str(solverSettings.tau)];
 dtstamp = datestr(datetime('now'),'YYYYmmDD_hhMMss');
 if exist([out_file,'.mat'],'file')
     fprintf('file already exists. Adding datetime stamp to avoid overwriting. \n');
@@ -130,7 +133,13 @@ end
 if save_results==1 && solverSettings.save_every==0
     %Setup output folder
     xhat_out = gather(xhat);
+    if solverSettings.normalization  %multiply normalization back
+        xhat_out = bsxfun(@times,xhat_out,reshape(solverSettings.psfn,1,1,[]));
+    end
     save([out_file,'.mat'],'xhat_out','b','f');   %Save result
+    saveas(gcf,[out_file,'.png']);
+end
+if save_settings
     slashes = strfind(config,'/');
     if ~isempty(slashes)
         config_fname = config(slashes(end)+1:end-2);

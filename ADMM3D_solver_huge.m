@@ -324,9 +324,12 @@ while n<solverSettings.maxIter
     end
     if mod(n,solverSettings.save_every) == 0
         vk_out = gather(vk);
+        if solverSettings.normalization  %multiply normalization back
+            vk_out = bsxfun(@times,vk_out,reshape(solverSettings.psfn,1,1,[]));
+        end
         filename = [solverSettings.save_dir,'\state_',num2str(n),'tau_',num2str(solverSettings.tau)];
-        save(filename,'vk_out');   %Save result
-        saveas(gcf,filename,'png');
+        save([filename,'.mat'],'vk_out');   %Save result
+        saveas(gcf,[filename,'.png']);
     end
 end
 end
