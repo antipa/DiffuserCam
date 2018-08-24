@@ -338,6 +338,7 @@ end
 % Private function to display figures
 function draw_figures(xk, solverSettings)
 set(0,'CurrentFigure',solverSettings.fighandle)
+set(gcf, 'Units', 'Normalized', 'OuterPosition', [0 0 1 1]);
 if solverSettings.normalization  %multiply normalization back
     xk = bsxfun(@times,xk,reshape(solverSettings.psfn,1,1,[]));
 end
@@ -363,8 +364,8 @@ elseif numel(size(xk))==3
     else
         caxis(solverSettings.colormap_axis)
     end
-    set(gca,'fontSize',6)
-    axis off
+    set(gca,'fontSize',8)
+    %axis off
     title('XY')
     hold off
     
@@ -382,7 +383,7 @@ elseif numel(size(xk))==3
         caxis(solverSettings.colormap_axis)
     end
     title('XZ')
-    axis off
+    %axis off
     hold off
 
     
@@ -400,7 +401,7 @@ elseif numel(size(xk))==3
         caxis(solverSettings.colormap_axis)
     end
     colorbar
-    axis off
+    %axis off
     hold off
     
 end
