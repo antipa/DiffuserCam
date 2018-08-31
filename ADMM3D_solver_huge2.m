@@ -346,9 +346,12 @@ if numel(size(xk))==2
 elseif numel(size(xk))==3
     xk = solverSettings.disp_crop(xk);
     subplot(1,3,1)
-    
-    im1 = squeeze(max(xk,[],3));
-%     im1 = squeeze(sum(xk,3));
+    switch lower(solverSettings.xy_draw)
+        case('max')
+            im1 = squeeze(max(xk,[],3));
+        case('sum')
+            im1 = squeeze(sum(xk,3));
+    end
     imagesc(solverSettings.disp_func(im1));
     hold on
     axis image

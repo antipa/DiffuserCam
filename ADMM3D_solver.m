@@ -50,22 +50,13 @@ p2 = floor(Nx * solverSettings.padFracX);
 %h(p1,p2,Nz/2) = 1;
 pad2d = @(x)padarray(x,[p1,p2],'both');  %2D padding
 pad3d = @(x)padarray(pad2d(x),[0 0 Nz-1],'post');
-if solverSettings.crop_circle
-    [xx,yy] = ndgrid((1:Ny)-solverSettings.ci(1),(1:Nx)-solverSettings.ci(2));
-    mask = double((xx.^2 + yy.^2)<solverSettings.ci(3)^2);
-    % mask = ones(size(mask)); % no mask test
-    crop3d = @(x)x(:,:,1).*mask;
-else
-    crop2d = @(x)x(p1+1:end-p1,p2+1:end-p2,:); %2D cropping
-    crop3d = @(x)crop2d(x(:,:,1));   %3D cropping. This is D
-end
+crop2d = @(x)x(p1+1:end-p1,p2+1:end-p2,:); %2D cropping
+crop3d = @(x)crop2d(x(:,:,1));   %3D cropping. This is D
 if p1==0 && p2==0
     pad2d = @(x)x;
     pad3d = @(x)padarray(x,[0 0 Nz-1],'post');
     crop3d = @(x)x(:,:,1);
-end
-    
-
+end 
 
 vec = @(X)reshape(X,numel(X),1);
 psf = circshift(flip(psf,3),ceil(Nz/2)+1,3)/norm(psf(:));  %Shift impulse stack and normalize
@@ -75,6 +66,18 @@ Hs_conj = conj(Hs);
 Hfor = @(x)real(fftshift(ifftn(Hs.*fftn(ifftshift(x)))));
 Hadj = @(x)real(fftshift(ifftn(Hs_conj.*fftn(ifftshift(x)))));
 HtH = abs(Hs.*Hs_conj);
+
+if solverSettings.crop_circle
+    [xx,yy] = ndgrid((1:Ny)-solverSettings.ci(1),(1:Nx)-solverSettings.ci(2));
+    mask = single((xx.^2 + yy.^2)<solverSettings.ci(3)^2); clear xx yy;
+%     mask = single(ones(size(mask))); % no mask test
+%     mask3d = padarray(mask,[Nx Ny Nz-1],1,'post'); %no mask test
+%     mask3d = repmat(pad2d(mask),[1 1 Nz]);
+    mask3d = padarray(pad2d(mask),[0 0 Nz-1],1,'post');
+%     Hfor = @(x)real(fftshift(ifftn(Hs.*fftn(ifftshift(x)))).*mask3d);
+%     Hadj = @(x)real(fftshift(ifftn(Hs_conj.*fftn(ifftshift(x)))));
+    b = b.*mask;
+end
 
 % vk = 0*real(Hs);   
 vk = pad2d(vk);
@@ -130,7 +133,11 @@ end
 
 v_mult = 1./(mu1*HtH + mu2*PsiTPsi + mu3);  %Denominator of v update (in 3D frequency space)  
 
-DtD = pad3d((abs(b)+1)./(abs(b)+1));   % Use input image to compute DtD so it picks up datatype of input (for Gpu)
+if solverSettings.crop_circle
+    DtD = pad3d(mask);
+else
+    DtD = pad3d((abs(b)+1)./(abs(b)+1));   % Use input image to compute DtD so it picks up datatype of input (for Gpu)
+end
 nu_mult = 1./(DtD + mu1);   %denominator of nu update
 
 n = 0;  %Initialize number of steps to 0
@@ -170,7 +177,6 @@ while n<solverSettings.maxIter
             uk = DiffuserCam_soft_3d([],[],[],solverSettings.tau_n/mu2,Lvk + eta/mu2);
             vkp_numerator = mu3*(wkp-rho/mu3) + mu2*PsiT(uk - eta/mu2) + mu1*Hadj(nukp - xi/mu1);
     end
-    
     
     vkp = real(fftshift(ifftn(v_mult .* fftn(ifftshift(vkp_numerator)))));
     clear vkp_numerator
@@ -306,17 +312,21 @@ if solverSettings.normalization  %multiply normalization back
     xk = bsxfun(@times,xk,reshape(solverSettings.psfn,1,1,[]));
 end
 if numel(size(xk))==2
+    xk = solverSettings.disp_crop(xk);
     imagesc(solverSettings.disp_func(xk))
     axis image
     colorbar
-    colormap(solverSettings.color_map);
+    colormap(solverSettings.cmap);
     
 elseif numel(size(xk))==3
     xk = solverSettings.disp_crop(xk);
-    subplot(1,3,1)
-    
-    im1 = squeeze(max(xk,[],3));
-%     im1 = squeeze(sum(xk,3));
+    subplot(1,3,1) 
+    switch lower(solverSettings.xy_draw)
+        case('max')
+            im1 = squeeze(max(xk,[],3));
+        case('sum')
+            im1 = squeeze(sum(xk,3));
+    end
     imagesc(solverSettings.disp_func(im1));
     hold on
     axis image
