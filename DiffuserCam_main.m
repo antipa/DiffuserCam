@@ -1,16 +1,15 @@
-function [xhat, f] = DiffuserCam_main(config,psf,layer,init)
+function [xhat, f] = DiffuserCam_main(config,psf,init)
 % Solve for image from DiffuserCam. First rev: 3D ADMM only. 
 % CONFIG: String with path to settings file. See DiffuserCam_settings.m for
 % details.
 
 % Read in settings
 run(config); %This should be a string path to a .m script that populates a bunch of variables in your workspace
-image_file = [input_folder,'\video3_MMStack_Pos0.ome00000',num2str(layer,'%03d'),'.tif'] ;
-out_file = [solverSettings.save_dir,'\layer_',num2str(layer)];
+%image_file = [input_folder,'\video3_MMStack_Pos0.ome00000',num2str(layer,'%03d'),'.tif'] ;
+% out_file = [solverSettings.save_dir,'\layer_',num2str(layer)];
 
 
 %Make figure handle
-
 if solverSettings.disp_figs ~= 0
     solverSettings.fighandle = figure(fig_num);
     clf
@@ -24,7 +23,7 @@ if (axial_downsample < 1 )
 end
 
 %% Load and prepare impulse stack
-if exist('psf')==0
+if ~exist('psf')
     psf = load(impulse_mat_file_name,impulse_var_name);
     psf = psf.(impulse_var_name);
 end
@@ -35,9 +34,10 @@ end
 if end_z == 0 || end_z > Nz_in
     end_z = Nz_in;
 end
+psf = psf(:,:,start_z:end_z);
 
 %crop the center, subtract bias
-psf = psf(solverSettings.center(1):solverSettings.center(2),solverSettings.center(3):solverSettings.center(4),:);   %use half sensor
+psf = psf(center(1):center(2),center(3):center(4),:);   %use half sensor
 psf = psf -psf_bias;
 
 % non-uniform axial downsampling
@@ -100,13 +100,18 @@ else
     imc = double(raw_in);
 end
 
-b = imc(solverSettings.center(1):solverSettings.center(2),solverSettings.center(3):solverSettings.center(4)); %use sensor centor
+b = imc(center(1):center(2),center(3):center(4)); %use sensor centor
 clear imc raw_in
 b = imresize(b,[Ny, Nx],'box');
 b = b/max(b(:));  %Normalize to 16-bit range
 
 %% Solver stuff
-% out_file = [solverSettings.save_dir,'\state_',num2str(solverSettings.maxIter),'tau_',num2str(solverSettings.tau)];
+switch solverSettings.regularizer
+    case('native')
+        out_file = [solverSettings.save_dir,'\state_',num2str(solverSettings.maxIter),'soft_tau_',num2str(solverSettings.tau_n)];
+    case('tv')
+        out_file = [solverSettings.save_dir,'\state_',num2str(solverSettings.maxIter),'tv_tau_',num2str(solverSettings.tau)];
+end
 dtstamp = datestr(datetime('now'),'YYYYmmDD_hhMMss');
 if exist([out_file,'.mat'],'file')
     fprintf('file already exists. Adding datetime stamp to avoid overwriting. \n');
@@ -147,5 +152,10 @@ if save_settings
     else
         config_fname = config(1:end-2);
     end
-    copyfile(config,[solverSettings.save_dir,'/',config_fname,'_',dtstamp,'.m'])  %Copy settings into save directory
+    switch solverSettings.regularizer
+    case('native')
+        copyfile(config,[solverSettings.save_dir,'\',config_fname,'_','state_',num2str(solverSettings.maxIter),'soft_tau_',num2str(solverSettings.tau_n),'.m'])
+    case('tv')
+        copyfile(config,[solverSettings.save_dir,'\',config_fname,'_','state_',num2str(solverSettings.maxIter),'tv_tau_',num2str(solverSettings.tau),'.m'])
+    end
 end
