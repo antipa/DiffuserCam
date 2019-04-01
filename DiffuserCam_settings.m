@@ -21,6 +21,8 @@ end_z = 0;   %Last plane to reconstruct. If set to 0, use last plane in file.
 % Populate solver options
  
 % Solver parameters
+solverSettings.z_weight = 30;  %extra TV for axial weighting. Only works with anisotrpic TV
+solverSettings.tv_iso = false;    %False uses anisotropic TV (which enables z-weighting)
 solverSettings.tau = .000600;    %sparsity parameter for TV
 solverSettings.tau_n = .0400;     %sparsity param for native sparsity
 solverSettings.mu1 = 1;    %Initialize ADMM tuning params to 1. These will be updated automatically by the autotune. 
@@ -32,10 +34,9 @@ solverSettings.autotune = 1;    % default: 1
 solverSettings.mu_inc = 1.1; 
 solverSettings.mu_dec = 1.1;  %Inrement and decrement values for mu during autotune. Turn to 1 to have no tuning. The algorithm is very insensitive to these parameters.
 solverSettings.resid_tol = 1.5;   % Primal/dual gap tolerance. Lower means more frequent tuning
-solverSettings.maxIter = 300; % Maximum iteration count  Default: 200
+solverSettings.maxIter = 500; % Maximum iteration count  Default: 200
 solverSettings.regularizer = 'tv';   %'TV' for 3D TV, 'native' for native. Default: TV
 solverSettings.cmap = 'gray';
-
 
 %Figures and display
 solverSettings.disp_percentile = 100;   %Percentile of max to set image scaling

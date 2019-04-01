@@ -7,6 +7,14 @@ function [vk, f] = ADMM3D_solver(psf,b,solverSettings)
 
 assert(size(psf,1) == size(b,1) || size(psf,2) == size(b,2),'image and impulse have different dimensions');
 
+if ~isfield(solverSettings,'tv_iso')
+   solverSettings.tv_iso = 'true';   %Default to isotropic TV 
+end
+
+if ~isfield(solverSettings,'z_weight')
+   solverSettings.z_weight = 1;   %Default to weighting z same as XY 
+end
+
 if ~isfield(solverSettings,'print_interval')
     solverSettings.print_interval = 1;
 end
@@ -68,6 +76,16 @@ Hfor = @(x)real((ifftn(Hs.*fftn((x)))));
 Hadj = @(x)real((ifftn(Hs_conj.*fftn((x)))));
 HtH = abs(Hs.*Hs_conj);
 
+% z-weighting parameter shouldn't do anything in iso tv mode
+if solverSettings.tv_iso == true
+    z_weight = 1;
+    if solverSettings.z_weight ~= 1
+       warning('Cannot use isotropic TV with z-weighting\n') 
+    end
+else
+    z_weight = solverSettings.z_weight;
+end
+
 
 vk = 0*real(Hs);   %Initialize variables. vk is the primal (this is the image you want to find)
 xi = vk;  % Dual associated with Mv = nu (boundary condition variables)
@@ -76,22 +94,22 @@ Dtb = pad3d(b);
 
 switch lower(solverSettings.regularizer)
     case('tv')
-        PsiTPsi = generate_laplacian(vk);
+        PsiTPsi = generate_laplacian(vk, z_weight);
         eta_1 = vk(1:end-1,:,:);  %Duals associatd with Psi v = u (TV sparsity)
         eta_2 = vk(:,1:end-1,:);   %zeros(2*Ny,2*Nx-1,Nz);
         eta_3 = vk(:,:,1:end-1);   %zeros(2*Ny,2*Nx,Nz-1);
         PsiT = @(P1,P2,P3)cat(1,P1(1,:,:),diff(P1,1,1),-P1(end,:,:)) + ...
             cat(2,P2(:,1,:),diff(P2,1,2),-P2(:,end,:)) + ...
-            cat(3,P3(:,:,1),diff(P3,1,3),-P3(:,:,end));
+            z_weight * cat(3,P3(:,:,1),diff(P3,1,3),-P3(:,:,end));
        
         % Sparsifying map
-        Psi = @(x)deal(-diff(x,1,1),-diff(x,1,2),-diff(x,1,3));
+        Psi = @(x)deal(-diff(x,1,1),-diff(x,1,2),-z_weight * diff(x,1,3));
         [uk1, uk2, uk3] = Psi(vk);
         Lvk1 = uk1;
         Lvk2 = uk2;
         Lvk3 = uk3;
     case('tv_native')
-        PsiTPsi = generate_laplacian(vk);
+        PsiTPsi = generate_laplacian(vk, z_weight);
         PsiT = @(P1,P2,P3,P4)cat(1,P1(1,:,:),diff(P1,1,1),-P1(end,:,:)) + ...
             cat(2,P2(:,1,:),diff(P2,1,2),-P2(:,end,:)) + ...
             cat(3,P3(:,:,1),diff(P3,1,3),-P3(:,:,end)) + ...
@@ -148,18 +166,21 @@ while n<solverSettings.maxIter
     wkp = max(rho/mu3 + vk,0);
     switch lower(solverSettings.regularizer)
         case('tv')
-            [uk1, uk2, uk3] = DiffuserCam_soft_3d(Lvk1+eta_1/mu2, Lvk2+eta_2/mu2, Lvk3+eta_3/mu2,solverSettings.tau/mu2);
+            [uk1, uk2, uk3] = DiffuserCam_soft_3d(Lvk1+eta_1/mu2, Lvk2+eta_2/mu2, Lvk3+eta_3/mu2,solverSettings.tau/mu2, solverSettings.tv_iso);
             vkp_numerator = mu3*(wkp-rho/mu3) + ...
                 mu2*PsiT(uk1 - eta_1/mu2,uk2 - eta_2/mu2, uk3 - eta_3/mu2) + ...
                 mu1*Hadj(nukp - xi/mu1);
         case('tv_native')
             [uk1, uk2, uk3, uk4] = DiffuserCam_soft_3d(Lvk1 + eta_1/mu2, Lvk2 + eta_2/mu2, ...
-                Lvk3 + eta_3/mu2, solverSettings.tau/mu2, Lvk4 + eta_4/mu2);
+                Lvk3 + eta_3/mu2, solverSettings.tau/mu2, solverSettings.tv_iso,...
+                Lvk4 + eta_4/mu2);
             vkp_numerator = mu3*(wkp-rho/mu3) + ...
                 mu2*PsiT(uk1 - eta_1/mu2,uk2 - eta_2/mu2, uk3 - eta_3/mu2, uk4 - eta_4/mu2) + ...
                 mu1*Hadj(nukp - xi/mu1);
         case('native')
-            uk = DiffuserCam_soft_3d([],[],[],solverSettings.tau_n/mu2,Lvk + eta/mu2);
+            uk = DiffuserCam_soft_3d([],[],[],solverSettings.tau_n/mu2,...
+                solverSettings.tv_iso,...
+                Lvk + eta/mu2);
             vkp_numerator = mu3*(wkp-rho/mu3) + mu2*PsiT(uk - eta/mu2) + mu1*Hadj(nukp - xi/mu1);
     end
     
@@ -329,15 +350,15 @@ end
 drawnow
 end
 
-function PsiTPsi = generate_laplacian(lapl)  %Takes in an array and makes laplacian on same grid (fft shifted)
+function PsiTPsi = generate_laplacian(lapl,z_weight)  %Takes in an array and makes laplacian on same grid (fft shifted)
     %lapl = zeros(2*Ny,2*Nx,Nz);    %Compute laplacian in closed form. This is the kernal to compute Psi'Psi
-    lapl(1) = 6;
+    lapl(1) = 4 + 2*z_weight^2;
     lapl(1,2,1) = -1;
     lapl(2,1,1) = -1;
-    lapl(1,1,2) = -1;
+    lapl(1,1,2) = -z_weight^2;
     lapl(1,end,1) = -1;
     lapl(end,1,1) = -1;
-    lapl(1,1,end) = -1;
+    lapl(1,1,end) = -z_weight^2;
     PsiTPsi = abs(fftn(lapl));   %Compute power spectrum of laplacian
 end
 
